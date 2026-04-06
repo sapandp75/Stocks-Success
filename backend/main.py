@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.database import init_db
-from backend.routers import regime
+from backend.routers import regime, screener
 
 app = FastAPI(title="Contrarian Investing Platform")
 
@@ -23,6 +23,7 @@ def startup():
 
 
 app.include_router(regime.router)
+app.include_router(screener.router)
 
 
 @app.get("/api/health")
