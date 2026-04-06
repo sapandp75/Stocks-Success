@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+backend/data/app.db
+backend/data/app.db-wal
+backend/data/app.db-shm
+frontend/node_modules/
+frontend/dist/
+.DS_Store
+*.egg-info/
