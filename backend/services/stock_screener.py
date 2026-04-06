@@ -88,6 +88,7 @@ def check_b2_warnings(stock: dict) -> list[str]:
 
 def scan_sp500(scan_type: str = "weekly") -> dict:
     """Full S&P 500 scan. Returns B1 and B2 candidates with warnings."""
+    import time
     from backend.services.sp500 import get_sp500_tickers
     from backend.services.market_data import get_stock_fundamentals
 
@@ -95,11 +96,13 @@ def scan_sp500(scan_type: str = "weekly") -> dict:
     b1_candidates = []
     b2_candidates = []
     errors = []
+    consecutive_errors = 0
 
-    for ticker in tickers:
+    for i, ticker in enumerate(tickers):
         try:
             result = get_stock_fundamentals(ticker)
             data = result.value
+            consecutive_errors = 0
             data["data_source"] = result.source
             data["data_completeness"] = result.completeness
             data["missing_fields"] = result.missing_fields
@@ -115,6 +118,15 @@ def scan_sp500(scan_type: str = "weekly") -> dict:
                 b2_candidates.append(entry)
         except Exception as e:
             errors.append({"ticker": ticker, "error": str(e)})
+            consecutive_errors += 1
+            # Back off when rate-limited
+            if "Rate" in str(e) or "Too Many" in str(e):
+                backoff = min(consecutive_errors * 2, 30)
+                time.sleep(backoff)
+
+        # Throttle requests to avoid Yahoo rate limits
+        if i % 5 == 4:
+            time.sleep(1.5)
 
     return {
         "scan_date": datetime.now().isoformat(),

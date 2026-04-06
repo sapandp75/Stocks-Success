@@ -77,6 +77,70 @@ def get_deep_dive_data(ticker: str):
             "exit_playbook": row["ai_exit_playbook"],
         }
 
+    # Enrichment: technicals, financial history, insider, institutional, analyst, peers
+    # Each in try/except — enrichment never blocks the critical path
+    technicals = None
+    try:
+        from backend.services.technicals import get_full_technicals
+        technicals = get_full_technicals(ticker)
+    except Exception:
+        pass
+
+    financial_history = None
+    try:
+        from backend.services.financial_history import get_financial_history
+        financial_history = get_financial_history(ticker)
+    except Exception:
+        pass
+
+    insider_activity = None
+    try:
+        from backend.services.institutional import get_insider_activity
+        insider_activity = get_insider_activity(ticker)
+    except Exception:
+        pass
+
+    institutional = None
+    try:
+        from backend.services.institutional import get_institutional_summary
+        institutional = get_institutional_summary(ticker)
+    except Exception:
+        pass
+
+    analyst = None
+    try:
+        from backend.services.sentiment import get_analyst_data
+        analyst = get_analyst_data(ticker)
+    except Exception:
+        pass
+
+    peers = None
+    try:
+        from backend.services.peers import get_peer_comparison
+        peers = get_peer_comparison(ticker)
+    except Exception:
+        pass
+
+    # Research context (collapsed by default in UI)
+    research_context = None
+    try:
+        from backend.services.research import get_all_research
+        from backend.services.sentiment import fetch_sentiment
+        from backend.services.transcripts import fetch_latest_transcript
+
+        r = get_all_research(ticker)
+        s = fetch_sentiment(ticker)
+        t = fetch_latest_transcript(ticker)
+        research_context = {
+            "articles": r.get("seeking_alpha", []),
+            "newsletters": r.get("substack", []),
+            "sentiment": s,
+            "transcript_available": t is not None,
+            "transcript_title": t["title"] if t else None,
+        }
+    except Exception:
+        pass
+
     return {
         "ticker": ticker,
         "fundamentals": fundamentals,
@@ -92,7 +156,14 @@ def get_deep_dive_data(ticker: str):
         "reverse_dcf": reverse_dcf_result,
         "forward_dcf": forward_dcf,
         "sensitivity_matrix": sensitivity,
+        "technicals": technicals,
+        "financial_history": financial_history,
+        "insider_activity": insider_activity,
+        "institutional": institutional,
+        "analyst": analyst,
+        "peers": peers,
         "ai_analysis": ai_analysis,
+        "research_context": research_context,
     }
 
 
@@ -125,3 +196,105 @@ def save_deep_dive(ticker: str, data: dict = Body(...)):
     db.commit()
     db.close()
     return {"status": "saved", "ticker": ticker}
+
+
+@router.post("/{ticker}/analyze")
+def analyze_deep_dive(ticker: str):
+    """Trigger Gemini 2.5 Pro to generate all 8 deep dive sections."""
+    ticker = ticker.upper()
+    context = {}
+
+    # Gather all Tier 1 data (each in try/except so failures don't block)
+    try:
+        fund = get_stock_fundamentals(ticker)
+        context["fundamentals"] = fund.value if hasattr(fund, 'value') else fund
+    except Exception:
+        pass
+
+    try:
+        from backend.services.technicals import get_full_technicals
+        context["technicals"] = get_full_technicals(ticker)
+    except Exception:
+        pass
+
+    try:
+        from backend.services.financial_history import get_financial_history
+        context["financial_history"] = get_financial_history(ticker)
+    except Exception:
+        pass
+
+    try:
+        from backend.services.institutional import get_insider_activity
+        context["insider_activity"] = get_insider_activity(ticker)
+    except Exception:
+        pass
+
+    try:
+        from backend.services.institutional import get_institutional_summary
+        context["institutional"] = get_institutional_summary(ticker)
+    except Exception:
+        pass
+
+    try:
+        from backend.services.sentiment import get_analyst_data
+        context["analyst"] = get_analyst_data(ticker)
+    except Exception:
+        pass
+
+    try:
+        from backend.services.sentiment import fetch_sentiment
+        context["sentiment"] = fetch_sentiment(ticker)
+    except Exception:
+        pass
+
+    try:
+        from backend.services.peers import get_peer_comparison
+        context["peers"] = get_peer_comparison(ticker)
+    except Exception:
+        pass
+
+    try:
+        from backend.services.regime_checker import get_full_regime
+        regime_data = get_full_regime()
+        context["regime"] = regime_data.get("regime", {})
+    except Exception:
+        pass
+
+    from backend.services.gemini_analyzer import generate_deep_dive
+    result = generate_deep_dive(ticker, context)
+
+    if "error" in result:
+        from fastapi import HTTPException
+        status_code = 429 if "Rate limit" in result["error"] else 500
+        raise HTTPException(status_code=status_code, detail=result["error"])
+
+    # Save to deep_dives table
+    db = get_db()
+    db.execute("""INSERT INTO deep_dives (
+        ticker, ai_first_impression, ai_bear_case_stock, ai_bear_case_business,
+        ai_bull_case_rebuttal, ai_bull_case_upside, ai_whole_picture,
+        ai_self_review, ai_verdict, ai_conviction
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
+        ticker,
+        result.get("first_impression") or result.get("data_snapshot"),
+        result.get("bear_case"),
+        result.get("bear_case"),  # combined
+        result.get("bull_case"),
+        result.get("bull_case"),
+        result.get("whole_picture"),
+        result.get("self_review"),
+        result.get("verdict"),
+        None,
+    ))
+    db.commit()
+    db.close()
+
+    return {
+        "ticker": ticker,
+        "status": "generated",
+        "model": result.get("model", ""),
+        "sections": {
+            k: v for k, v in result.items()
+            if k not in ("raw_text", "ticker", "generated_at", "model")
+        },
+    }

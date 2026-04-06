@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { getRegime } from '../api'
 import RegimeBadge from '../components/RegimeBadge'
+import EarningsCalendar from '../components/EarningsCalendar'
+import BreadthGauge from '../components/BreadthGauge'
 
 function DirectionCard({ data }) {
   if (!data) return null
@@ -79,6 +81,15 @@ export default function RegimePage() {
         <DirectionCard data={spy} />
         <DirectionCard data={qqq} />
       </div>
+
+      {data.breadth && (
+        <div className="mt-6 mb-6">
+          <h2 className="text-lg font-bold mb-3" style={{ color: '#1a1a2e' }}>Market Breadth</h2>
+          <BreadthGauge data={data.breadth} />
+        </div>
+      )}
+
+      <EarningsCalendar />
     </div>
   )
 }

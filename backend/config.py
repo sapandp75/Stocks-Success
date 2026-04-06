@@ -44,6 +44,57 @@ OPTIONS_PARAMS = {
     "earnings_proximity_days": 14,
 }
 
+# Research Intelligence Layer
+RESEARCH_CONFIG = {
+    "cache_ttl_hours": 6,
+    "max_articles_per_ticker": 5,
+    "max_transcript_age_days": 90,
+    "digest_lookback_days": 7,
+    "sentiment_staleness_hours": 12,
+}
+
+SA_RSS_TEMPLATE = "https://seekingalpha.com/api/sa/combined/{ticker}.xml"
+
+SUBSTACK_FEEDS = [
+    {"name": "Yet Another Value Blog", "url": "https://yetanothervalueblog.substack.com/feed"},
+    {"name": "Compounding Quality", "url": "https://www.compoundingquality.net/feed"},
+    {"name": "TSOH Investment Research", "url": "https://thescienceofhitting.com/feed"},
+    {"name": "Net Interest", "url": "https://www.netinterest.co/feed"},
+]
+
+CNBC_EARNINGS_RSS = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839135"
+
+# Technicals config
+TECHNICALS_CONFIG = {
+    "cache_ttl_hours": 1,
+    "rsi_period": 14,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "bollinger_period": 20,
+    "bollinger_std": 2,
+    "adx_period": 14,
+    "volume_avg_period": 20,
+}
+
+# Enrichment cache TTLs
+ENRICHMENT_CONFIG = {
+    "financial_history_ttl_hours": 6,
+    "insider_ttl_hours": 6,
+    "institutional_ttl_hours": 6,
+    "analyst_ttl_hours": 6,
+    "peer_ttl_hours": 6,
+}
+
+# Gemini 2.5 Pro config
+GEMINI_CONFIG = {
+    "model": "gemini-2.5-pro",
+    "max_rpm": 5,
+    "max_rpd": 100,
+    "max_output_tokens": 8192,
+    "temperature": 0.7,
+}
+
 # DCF defaults — WACC fixed across scenarios per spec
 DCF_DEFAULTS = {
     "wacc": 0.10,

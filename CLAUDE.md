@@ -19,6 +19,17 @@ The dashboard will then render your analysis in the 8-section view.
 - get_analyst_estimates, get_analyst_ratings, get_ownership_analysis
 - get_dividend_analysis, get_risk_metrics, stock_screener, search_ticker
 
+## TradingView MCP Servers
+Two TradingView MCP servers are configured in `.mcp.json`:
+- **tradingview-indicators** (bidouilles) — Full indicator snapshots, OHLCV data, no API key
+- **tradingview-screener** (atilaahmettaner) — Stock screening, sentiment, backtesting, no API key
+
+Bridge `--tv` flag fetches TradingView indicators directly:
+```
+python bridge/deep_dive_worker.py ADBE --tv          # TV data only
+python bridge/deep_dive_worker.py ADBE --context --tv # full context + TV data
+```
+
 ## Screener Rules (fail-closed: missing data = FAIL)
 B1: op margin >20%, FCF+, down >20%, rev growth >0%, D/E <5x, fwd PE <50x
 B2: rev growth >25%, gross margin >40%, revenue >$200M

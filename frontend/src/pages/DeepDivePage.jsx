@@ -5,6 +5,14 @@ import CollapsibleSection from '../components/CollapsibleSection'
 import DcfCalculator from '../components/DcfCalculator'
 import SensitivityMatrix from '../components/SensitivityMatrix'
 import EntryGrid from '../components/EntryGrid'
+import ResearchPanel from '../components/ResearchPanel'
+import TechnicalPanel from '../components/TechnicalPanel'
+import SparklineGrid from '../components/SparklineGrid'
+import PeerTable from '../components/PeerTable'
+import AnalystBar from '../components/AnalystBar'
+import InsiderPanel from '../components/InsiderPanel'
+import InstitutionalPanel from '../components/InstitutionalPanel'
+import AiAnalyzeButton from '../components/AiAnalyzeButton'
 
 function MetricCell({ label, value, color }) {
   return (
@@ -86,6 +94,10 @@ export default function DeepDivePage() {
 
       {loading && <p style={{ color: '#6b7280' }}>Loading deep dive data...</p>}
 
+      {data && !ai && (
+        <AiAnalyzeButton ticker={data.ticker} onComplete={() => loadData(data.ticker)} />
+      )}
+
       {data && (
         <div className="space-y-3">
           {/* Section 1: Data Snapshot */}
@@ -124,6 +136,8 @@ export default function DeepDivePage() {
               <MetricCell label="ROE" value={fmt(f.return_on_equity)} />
               <MetricCell label="Div Yield" value={f.dividend_yield ? fmt(f.dividend_yield) : '—'} />
             </div>
+            {data.technicals && <TechnicalPanel technicals={data.technicals} />}
+            {data.financial_history && <SparklineGrid data={data.financial_history} />}
           </CollapsibleSection>
 
           {/* Section 2: First Impression */}
@@ -226,6 +240,8 @@ export default function DeepDivePage() {
                 <SensitivityMatrix matrix={data.sensitivity_matrix} currentPrice={price} />
               </div>
             )}
+            {data.peers && <PeerTable data={data.peers} ticker={data.ticker} />}
+            {data.analyst && <AnalystBar data={data.analyst} currentPrice={price} />}
           </CollapsibleSection>
 
           {/* Section 6: Whole Picture */}
@@ -234,6 +250,8 @@ export default function DeepDivePage() {
               text={ai?.whole_picture}
               placeholder="Sector theme, smart money (13F), management quality, customer evidence — awaiting AI analysis."
             />
+            {data.insider_activity && <InsiderPanel data={data.insider_activity} />}
+            {data.institutional && <InstitutionalPanel data={data.institutional} />}
           </CollapsibleSection>
 
           {/* Section 7: Self-Review */}
@@ -278,6 +296,11 @@ export default function DeepDivePage() {
             ) : (
               <AiText text={null} placeholder="Bucket assignment, conviction, entry grid, exit playbook — awaiting AI analysis." />
             )}
+          </CollapsibleSection>
+
+          {/* Section 9: Research Context */}
+          <CollapsibleSection title="Research Context" number="9" accentColor="#3b82f6" defaultOpen={false}>
+            <ResearchPanel ticker={data.ticker} initialData={data.research_context} />
           </CollapsibleSection>
         </div>
       )}

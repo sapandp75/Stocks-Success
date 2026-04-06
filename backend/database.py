@@ -82,5 +82,117 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_deep_dives_ticker ON deep_dives(ticker, dive_date DESC);
         CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
         CREATE INDEX IF NOT EXISTS idx_scan_results_date ON scan_results(scan_date DESC);
+
+        CREATE TABLE IF NOT EXISTS research_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            source TEXT NOT NULL,
+            content_type TEXT NOT NULL,
+            title TEXT,
+            summary TEXT,
+            url TEXT,
+            published_date TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+            raw_json TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_research_ticker ON research_cache(ticker, fetched_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_research_source ON research_cache(source, ticker);
+
+        CREATE TABLE IF NOT EXISTS sentiment_cache (
+            ticker TEXT PRIMARY KEY,
+            av_sentiment_score REAL,
+            av_sentiment_label TEXT,
+            av_article_count INTEGER,
+            finnhub_consensus TEXT,
+            finnhub_target_mean REAL,
+            finnhub_target_high REAL,
+            finnhub_target_low REAL,
+            finnhub_recent_change TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS digest_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            headline TEXT NOT NULL,
+            detail TEXT,
+            event_date TEXT,
+            source TEXT,
+            url TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+            seen INTEGER DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_digest_ticker ON digest_events(ticker, fetched_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_digest_unseen ON digest_events(seen, fetched_at DESC);
+
+        CREATE TABLE IF NOT EXISTS technicals_cache (
+            ticker TEXT PRIMARY KEY,
+            rsi REAL,
+            macd_value REAL,
+            macd_signal REAL,
+            macd_histogram REAL,
+            macd_crossover TEXT,
+            direction TEXT,
+            ema20 REAL,
+            sma50 REAL,
+            sma200 REAL,
+            adx REAL,
+            bollinger_upper REAL,
+            bollinger_lower REAL,
+            bollinger_pct_b REAL,
+            volume_relative REAL,
+            volume_trend TEXT,
+            support_1 REAL,
+            support_2 REAL,
+            resistance_1 REAL,
+            resistance_2 REAL,
+            rs_vs_spy_20d REAL,
+            rs_vs_spy_60d REAL,
+            data_json TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS financial_history_cache (
+            ticker TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            value REAL,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (ticker, metric, year)
+        );
+
+        CREATE TABLE IF NOT EXISTS insider_cache (
+            ticker TEXT PRIMARY KEY,
+            net_sentiment TEXT,
+            data_json TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS institutional_cache (
+            ticker TEXT PRIMARY KEY,
+            trend TEXT,
+            data_json TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS analyst_cache (
+            ticker TEXT PRIMARY KEY,
+            consensus TEXT,
+            target_mean REAL,
+            target_low REAL,
+            target_high REAL,
+            num_analysts INTEGER,
+            data_json TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS peer_cache (
+            ticker TEXT PRIMARY KEY,
+            peers_json TEXT,
+            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     """)
     conn.close()

@@ -29,6 +29,25 @@ def add_to_watchlist(entry: dict = Body(...)):
     return {"status": "saved", "ticker": entry["ticker"]}
 
 
+@router.get("/digest")
+def get_watchlist_digest():
+    """What Changed digest for watchlist tickers."""
+    from backend.services.digest import get_digest, refresh_digest
+    db = get_db()
+    rows = db.execute("SELECT ticker FROM watchlist WHERE status = 'WATCHING'").fetchall()
+    db.close()
+    tickers = [r["ticker"] for r in rows]
+    if not tickers:
+        return {"events": [], "note": "Add stocks to watchlist first."}
+    refresh_digest(tickers)
+    events = get_digest(tickers=tickers)
+    return {
+        "tickers_checked": len(tickers),
+        "events": events,
+        "unseen_count": len([e for e in events if not e.get("seen")]),
+    }
+
+
 @router.delete("/{ticker}")
 def remove_from_watchlist(ticker: str):
     db = get_db()

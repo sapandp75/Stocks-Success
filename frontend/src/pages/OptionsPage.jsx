@@ -97,7 +97,7 @@ export default function OptionsPage() {
       )}
 
       {results && contracts.length === 0 && (
-        <p className="text-sm" style={{ color: '#6b7280' }}>No qualifying contracts found. Filters: 60-120 DTE, delta 0.25-0.40, OI &gt; 500, spread &lt; 10%, premium ≤ $7.</p>
+        <p className="text-sm" style={{ color: '#6b7280' }}>No qualifying contracts found. Filters: 60-120 DTE, 2-15% OTM, delta 0.25-0.40, OI &gt; 500, spread &lt; 10%, premium ≤ $7.</p>
       )}
 
       {errors.length > 0 && (

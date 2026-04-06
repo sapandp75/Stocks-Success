@@ -1,5 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import WarningBadge from './WarningBadge'
+import SentimentBadge from './SentimentBadge'
+import DirectionBadge from './DirectionBadge'
+import RsiChip from './RsiChip'
 import { addToWatchlist } from '../api'
 
 function fmt(val, type = 'pct') {
@@ -41,6 +44,8 @@ export default function StockCard({ stock, bucket }) {
             >
               {bucket || stock.bucket}
             </span>
+            {stock.direction && <DirectionBadge direction={stock.direction} />}
+            {stock.rsi != null && <RsiChip rsi={stock.rsi} />}
           </div>
           <div className="text-xs mt-0.5" style={{ color: '#6b7280' }}>
             {stock.name} · {stock.sector}
@@ -90,6 +95,36 @@ export default function StockCard({ stock, bucket }) {
           <div className="font-medium" style={{ color: '#1a1a2e' }}>{fmt(stock.market_cap, 'money')}</div>
         </div>
       </div>
+
+      {stock.analyst_target_upside != null && (
+        <div className="text-xs mb-2" style={{ color: stock.analyst_target_upside > 0 ? '#00a562' : '#e5484d' }}>
+          Target: ${stock.analyst_target_mean?.toFixed(0)} ({stock.analyst_target_upside > 0 ? '+' : ''}{stock.analyst_target_upside}%)
+        </div>
+      )}
+
+      {/* Sentiment + Analyst Trend */}
+      {(stock.sentiment_score !== undefined || stock.analyst_trend) && (
+        <div className="flex items-center gap-2 mb-3">
+          {stock.sentiment_score !== undefined && stock.sentiment_score !== null && (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px]" style={{ color: '#6b7280' }}>Sentiment</span>
+              <SentimentBadge
+                score={stock.sentiment_score}
+                label={stock.sentiment_label}
+                contrarianRating={stock.contrarian_rating}
+              />
+            </div>
+          )}
+          {stock.analyst_trend && stock.analyst_trend !== 'maintain' && (
+            <span className="text-xs px-1.5 py-0.5 rounded font-medium" style={{
+              backgroundColor: stock.analyst_trend === 'downgrade' ? '#dcfce7' : '#f7f8fa',
+              color: stock.analyst_trend === 'downgrade' ? '#00a562' : '#6b7280',
+            }}>
+              {stock.analyst_trend === 'downgrade' ? '↓ Downgrade' : '↑ Upgrade'}
+            </span>
+          )}
+        </div>
+      )}
 
       {stock.warnings && stock.warnings.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">

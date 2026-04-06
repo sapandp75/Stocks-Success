@@ -10,6 +10,8 @@ const SORTS = [
   { value: 'pe', label: 'Cheapest P/E' },
   { value: 'margin', label: 'Highest Margin' },
   { value: 'growth', label: 'Fastest Growth' },
+  { value: 'rsi', label: 'Lowest RSI' },
+  { value: 'direction', label: 'By Direction' },
 ]
 
 export default function FilterBar({ filters, onChange }) {
@@ -24,6 +26,32 @@ export default function FilterBar({ filters, onChange }) {
         onChange={e => set('sector', e.target.value)}
       >
         {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+
+      <select
+        className="border rounded px-2 py-1 text-sm bg-white"
+        style={{ borderColor: '#e2e4e8', color: '#1a1a2e' }}
+        value={filters.direction || ''}
+        onChange={e => set('direction', e.target.value)}
+      >
+        <option value="">All Directions</option>
+        <option value="FULL_UPTREND">Full Uptrend</option>
+        <option value="PULLBACK_IN_UPTREND">Pullback in Uptrend</option>
+        <option value="CORRECTION_IN_UPTREND">Correction in Uptrend</option>
+        <option value="TREND_WEAKENING">Trend Weakening</option>
+        <option value="FULL_DOWNTREND">Full Downtrend</option>
+      </select>
+
+      <select
+        className="border rounded px-2 py-1 text-sm bg-white"
+        style={{ borderColor: '#e2e4e8', color: '#1a1a2e' }}
+        value={filters.rsiFilter || ''}
+        onChange={e => set('rsiFilter', e.target.value)}
+      >
+        <option value="">All RSI</option>
+        <option value="oversold">Oversold (&lt;30)</option>
+        <option value="neutral">Neutral (30-70)</option>
+        <option value="overbought">Overbought (&gt;70)</option>
       </select>
 
       <select

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getWatchlist, removeFromWatchlist } from '../api'
+import DigestList from '../components/DigestList'
 
 export default function WatchlistPage() {
   const [watchlist, setWatchlist] = useState([])
@@ -17,6 +18,8 @@ export default function WatchlistPage() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold mb-4" style={{ color: '#1a1a2e' }}>Watchlist</h1>
+
+      <DigestList />
 
       {watchlist.length === 0 ? (
         <p className="text-sm" style={{ color: '#6b7280' }}>No stocks on watchlist. Use the Screener to add stocks.</p>

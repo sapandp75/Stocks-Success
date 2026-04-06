@@ -31,6 +31,48 @@ def run_scan(scan_type: str = Query("weekly", enum=["daily", "weekly"])):
         return {"scan_type": "daily", "results": results}
 
     results = scan_sp500(scan_type=scan_type)
+    # Enrich candidates with sentiment + technicals (only stocks that passed gates)
+    try:
+        from backend.services.sentiment import fetch_sentiment
+        for candidate in results["b1_candidates"] + results["b2_candidates"]:
+            try:
+                sent = fetch_sentiment(candidate["ticker"])
+                candidate["sentiment_score"] = sent.get("av_sentiment_score")
+                candidate["sentiment_label"] = sent.get("av_sentiment_label")
+                candidate["contrarian_rating"] = sent.get("contrarian_rating")
+                candidate["analyst_trend"] = sent.get("finnhub_recent_change")
+            except Exception:
+                candidate["sentiment_score"] = None
+                candidate["contrarian_rating"] = "UNKNOWN"
+                candidate["analyst_trend"] = None
+    except Exception:
+        pass
+    # Enrich with technicals: direction + RSI + analyst target
+    try:
+        from backend.services.technicals import get_full_technicals
+        from backend.services.sentiment import get_analyst_data
+        for candidate in results["b1_candidates"] + results["b2_candidates"]:
+            try:
+                tech = get_full_technicals(candidate["ticker"])
+                candidate["direction"] = tech.get("direction")
+                candidate["rsi"] = tech.get("rsi")
+                candidate["macd_crossover"] = tech.get("macd_crossover")
+            except Exception:
+                candidate["direction"] = None
+                candidate["rsi"] = None
+            try:
+                analyst = get_analyst_data(candidate["ticker"])
+                candidate["analyst_target_mean"] = analyst.get("target_mean")
+                candidate["analyst_target_upside"] = None
+                price = candidate.get("price")
+                target = analyst.get("target_mean")
+                if price and target and price > 0:
+                    candidate["analyst_target_upside"] = round((target - price) / price * 100, 1)
+            except Exception:
+                candidate["analyst_target_mean"] = None
+                candidate["analyst_target_upside"] = None
+    except Exception:
+        pass
     # Save to database
     db = get_db()
     db.execute(

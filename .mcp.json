@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "tradingview-indicators": {
+      "type": "stdio",
+      "command": "mcp-tradingview",
+      "args": [],
+      "env": {}
+    },
+    "tradingview-screener": {
+      "type": "stdio",
+      "command": "tradingview-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

@@ -44,7 +44,7 @@ def filter_contracts(
             continue
 
         otm_pct = (strike - stock_price) / stock_price if stock_price > 0 else 0
-        if otm_pct < 0.05 or otm_pct > 0.10:
+        if otm_pct < 0.02 or otm_pct > 0.15:
             continue
 
         if oi < params["min_oi"]:

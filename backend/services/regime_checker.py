@@ -94,6 +94,56 @@ def determine_regime(spy: dict, qqq: dict, vix: float) -> dict:
     }
 
 
+def calculate_market_breadth() -> dict:
+    """Sample ~50 S&P stocks to estimate % above 200d and 50d SMA."""
+    try:
+        from backend.services.sp500 import get_sp500_tickers
+        import random
+        all_tickers = get_sp500_tickers()
+        sample = random.sample(all_tickers, min(50, len(all_tickers)))
+
+        above_200 = 0
+        above_50 = 0
+        counted = 0
+
+        for t in sample:
+            try:
+                ma = get_moving_averages(t)
+                if not ma or not ma.get("price"):
+                    continue
+                counted += 1
+                if ma["price"] > ma.get("sma200", 0):
+                    above_200 += 1
+                if ma["price"] > ma.get("sma50", 0):
+                    above_50 += 1
+            except Exception:
+                continue
+
+        if counted == 0:
+            return {"pct_above_200d": None, "pct_above_50d": None, "breadth_signal": "UNKNOWN", "sample_size": 0}
+
+        pct_200 = round(above_200 / counted * 100, 1)
+        pct_50 = round(above_50 / counted * 100, 1)
+
+        if pct_200 >= 70:
+            signal = "STRONG"
+        elif pct_200 >= 50:
+            signal = "HEALTHY"
+        elif pct_200 >= 30:
+            signal = "WEAKENING"
+        else:
+            signal = "POOR"
+
+        return {
+            "pct_above_200d": pct_200,
+            "pct_above_50d": pct_50,
+            "breadth_signal": signal,
+            "sample_size": counted,
+        }
+    except Exception:
+        return {"pct_above_200d": None, "pct_above_50d": None, "breadth_signal": "UNKNOWN", "sample_size": 0}
+
+
 def get_full_regime() -> dict:
     spy_ma = get_moving_averages("SPY")
     qqq_ma = get_moving_averages("QQQ")
