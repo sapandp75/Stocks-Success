@@ -1,0 +1,88 @@
+"""Shared validators for the contrarian investing platform."""
+
+import re
+from fastapi import HTTPException
+from pydantic import BaseModel, field_validator
+
+
+# --- Ticker validation ---
+
+_TICKER_RE = re.compile(r'^[A-Z]{1,5}(-[A-Z]{1,2})?$')
+
+
+def validate_ticker(ticker: str) -> str:
+    """Validate and normalize a ticker symbol. Raises 422 on invalid input."""
+    t = ticker.strip().upper()
+    if not _TICKER_RE.match(t):
+        raise HTTPException(status_code=422, detail=f"Invalid ticker format: {ticker!r}")
+    return t
+
+
+# --- Pydantic request models ---
+
+class DeepDivePayload(BaseModel):
+    first_impression: str | None = None
+    bear_case_stock: str | None = None
+    bear_case_business: str | None = None
+    bull_case_rebuttal: str | None = None
+    bull_case_upside: str | None = None
+    whole_picture: str | None = None
+    self_review: str | None = None
+    verdict: str | None = None
+    conviction: str | None = None
+    entry_grid: list[dict] | None = None
+    exit_playbook: str | None = None
+
+
+class WatchlistEntry(BaseModel):
+    ticker: str
+    bucket: str = "B1"
+    thesis_note: str = ""
+    entry_zone_low: float | None = None
+    entry_zone_high: float | None = None
+    conviction: str = "MODERATE"
+    status: str = "WATCHING"
+
+    @field_validator("ticker")
+    @classmethod
+    def normalize_ticker(cls, v: str) -> str:
+        t = v.strip().upper()
+        if not _TICKER_RE.match(t):
+            raise ValueError(f"Invalid ticker: {v!r}")
+        return t
+
+
+class PositionEntry(BaseModel):
+    ticker: str
+    position_type: str
+    bucket: str = "B1"
+    shares: float | None = None
+    avg_price: float | None = None
+    strike: float | None = None
+    expiry: str | None = None
+    premium_paid: float | None = None
+    contracts: int | None = None
+    thesis: str = ""
+    invalidation: list[str] = []
+    target_fair_value: float | None = None
+    status: str = "OPEN"
+
+    @field_validator("ticker")
+    @classmethod
+    def normalize_ticker(cls, v: str) -> str:
+        t = v.strip().upper()
+        if not _TICKER_RE.match(t):
+            raise ValueError(f"Invalid ticker: {v!r}")
+        return t
+
+    @field_validator("position_type")
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        if v not in ("stock", "option"):
+            raise ValueError("position_type must be 'stock' or 'option'")
+        return v
+
+
+class ClosePositionPayload(BaseModel):
+    exit_price: float
+    exit_reason: str = ""

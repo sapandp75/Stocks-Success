@@ -6,19 +6,11 @@ import os
 import json
 import httpx
 import yfinance as yf
-from datetime import datetime
-from backend.database import get_db
+from backend.database import get_db, is_fresh
 from backend.config import ENRICHMENT_CONFIG
 
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
-
-
-def _is_fresh(fetched_at: str, ttl_hours: int) -> bool:
-    if not fetched_at:
-        return False
-    fetched = datetime.fromisoformat(fetched_at)
-    return (datetime.now() - fetched).total_seconds() < ttl_hours * 3600
 
 
 def _classify_insider_sentiment(transactions: list[dict]) -> str:
@@ -48,11 +40,10 @@ def get_insider_activity(ticker: str) -> dict:
     """Finnhub insider transactions. Cached in insider_cache table."""
     ttl = ENRICHMENT_CONFIG["insider_ttl_hours"]
 
-    db = get_db()
-    cached = db.execute("SELECT * FROM insider_cache WHERE ticker = ?", (ticker,)).fetchone()
-    db.close()
+    with get_db() as db:
+        cached = db.execute("SELECT * FROM insider_cache WHERE ticker = ?", (ticker,)).fetchone()
 
-    if cached and _is_fresh(cached["fetched_at"], ttl):
+    if cached and is_fresh(cached["fetched_at"], ttl):
         data = json.loads(cached["data_json"]) if cached["data_json"] else {}
         return {
             "net_sentiment": cached["net_sentiment"],
@@ -103,14 +94,13 @@ def get_insider_activity(ticker: str) -> dict:
 
     # Cache
     data_json = json.dumps({"recent_buys": recent_buys, "recent_sells": recent_sells, "notable": notable})
-    db = get_db()
-    db.execute(
-        """INSERT OR REPLACE INTO insider_cache (ticker, net_sentiment, data_json, fetched_at)
-           VALUES (?, ?, ?, datetime('now'))""",
-        (ticker, net_sentiment, data_json),
-    )
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute(
+            """INSERT OR REPLACE INTO insider_cache (ticker, net_sentiment, data_json, fetched_at)
+               VALUES (?, ?, ?, datetime('now'))""",
+            (ticker, net_sentiment, data_json),
+        )
+        db.commit()
 
     return result
 
@@ -119,11 +109,10 @@ def get_institutional_summary(ticker: str) -> dict:
     """yfinance institutional holders summary. Cached in institutional_cache table."""
     ttl = ENRICHMENT_CONFIG["institutional_ttl_hours"]
 
-    db = get_db()
-    cached = db.execute("SELECT * FROM institutional_cache WHERE ticker = ?", (ticker,)).fetchone()
-    db.close()
+    with get_db() as db:
+        cached = db.execute("SELECT * FROM institutional_cache WHERE ticker = ?", (ticker,)).fetchone()
 
-    if cached and _is_fresh(cached["fetched_at"], ttl):
+    if cached and is_fresh(cached["fetched_at"], ttl):
         data = json.loads(cached["data_json"]) if cached["data_json"] else {}
         return {
             "top_holders": data.get("top_holders", []),
@@ -175,13 +164,12 @@ def get_institutional_summary(ticker: str) -> dict:
 
     # Cache
     data_json = json.dumps({"top_holders": top_holders, "institutional_pct": institutional_pct})
-    db = get_db()
-    db.execute(
-        """INSERT OR REPLACE INTO institutional_cache (ticker, trend, data_json, fetched_at)
-           VALUES (?, ?, ?, datetime('now'))""",
-        (ticker, trend, data_json),
-    )
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute(
+            """INSERT OR REPLACE INTO institutional_cache (ticker, trend, data_json, fetched_at)
+               VALUES (?, ?, ?, datetime('now'))""",
+            (ticker, trend, data_json),
+        )
+        db.commit()
 
     return result

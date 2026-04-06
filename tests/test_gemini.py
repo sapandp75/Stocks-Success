@@ -92,7 +92,7 @@ def test_parse_sections_empty():
 def test_rate_limiter_allows():
     """Fresh limiter should allow requests."""
     limiter = GeminiRateLimiter(max_rpm=5, max_rpd=100)
-    assert limiter.can_request() is True
+    assert limiter.acquire() is True
     assert limiter.seconds_until_available() == 0
 
 
@@ -100,7 +100,6 @@ def test_rate_limiter_blocks_rpm():
     """After max_rpm requests, should block."""
     limiter = GeminiRateLimiter(max_rpm=3, max_rpd=100)
     for _ in range(3):
-        assert limiter.can_request() is True
-        limiter.record_request()
-    assert limiter.can_request() is False
+        assert limiter.acquire() is True
+    assert limiter.acquire() is False
     assert limiter.seconds_until_available() > 0

@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.stats import norm
-from backend.config import OPTIONS_PARAMS, USD_GBP_RATE
+from backend.config import OPTIONS_PARAMS
+from backend.services.fx import get_usd_gbp_rate
 from backend.services.earnings import check_earnings_proximity
 
 
@@ -93,7 +94,7 @@ def filter_contracts(
             "ask": ask,
             "mid": round(mid, 2),
             "premium_usd": ask,
-            "premium_gbp": round(ask * 100 * USD_GBP_RATE, 2),
+            "premium_gbp": round(ask * 100 * get_usd_gbp_rate(), 2),
             "target_3x": round(ask * 3, 2),
             "target_4x": round(ask * 4, 2),
             "required_move_pct": round(required_move_pct, 4),
@@ -101,7 +102,7 @@ def filter_contracts(
             "open_interest": oi,
             "spread_pct": round(spread_pct, 4),
             "theta_daily": theta_daily,
-            "theta_daily_gbp": round(theta_daily * 100 * USD_GBP_RATE, 2),
+            "theta_daily_gbp": round(theta_daily * 100 * get_usd_gbp_rate(), 2),
             "warnings": warnings,
         })
 

@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react'
-import { getRegime } from '../api'
+import { useRegime } from '../RegimeContext'
 import RegimeBadge from '../components/RegimeBadge'
 import EarningsCalendar from '../components/EarningsCalendar'
 import BreadthGauge from '../components/BreadthGauge'
@@ -11,10 +10,10 @@ function DirectionCard({ data }) {
       <div className="flex items-center justify-between mb-3">
         <span className="font-bold text-lg" style={{ color: '#1a1a2e' }}>{data.ticker}</span>
         <span className="text-sm font-medium px-2 py-0.5 rounded" style={{
-          backgroundColor: data.direction.includes('UPTREND') ? '#dcfce7' : data.direction.includes('DOWNTREND') ? '#fef2f2' : '#fef9c3',
-          color: data.direction.includes('UPTREND') ? '#00a562' : data.direction.includes('DOWNTREND') ? '#e5484d' : '#d97b0e',
+          backgroundColor: data.direction?.includes('UPTREND') ? '#dcfce7' : data.direction?.includes('DOWNTREND') ? '#fef2f2' : '#fef9c3',
+          color: data.direction?.includes('UPTREND') ? '#00a562' : data.direction?.includes('DOWNTREND') ? '#e5484d' : '#d97b0e',
         }}>
-          {data.direction.replace(/_/g, ' ')}
+          {(data.direction || 'UNKNOWN').replace(/_/g, ' ')}
         </span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm">
@@ -40,15 +39,14 @@ function DirectionCard({ data }) {
 }
 
 export default function RegimePage() {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    getRegime().then(setData).catch(() => {}).finally(() => setLoading(false))
-  }, [])
+  const { data, loading, error } = useRegime()
 
   if (loading) return <div className="p-8" style={{ color: '#6b7280' }}>Loading regime data...</div>
-  if (!data) return <div className="p-8" style={{ color: '#e5484d' }}>Failed to load regime data.</div>
+  if (!data) return (
+    <div className="p-8" style={{ color: '#e5484d' }}>
+      Failed to load regime data.{error && ` (${error})`}
+    </div>
+  )
 
   const { spy, qqq, regime } = data
 

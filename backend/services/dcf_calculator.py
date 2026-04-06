@@ -137,13 +137,18 @@ def reverse_dcf(
     wacc: float = DCF_DEFAULTS["wacc"],
     terminal_growth: float = DCF_DEFAULTS["terminal_growth"],
 ) -> dict:
-    """What growth rate does the market price imply? Binary search."""
+    """What growth rate does the market price imply? Binary search.
+
+    Phase 2 growth (years 6-10) = min(g1 * 0.6, 0.12) to prevent
+    unreasonably high late-stage assumptions for high-growth stocks.
+    """
     target_equity = current_price * shares_outstanding + (net_debt or 0)
     low, high = -0.10, 0.50
 
     for _ in range(100):
         mid = (low + high) / 2
-        core = _compute_dcf(starting_fcf, mid, mid * 0.6, terminal_growth, wacc,
+        g2 = min(mid * 0.6, 0.12)  # Cap Phase 2 at 12%
+        core = _compute_dcf(starting_fcf, mid, g2, terminal_growth, wacc,
                             shares_outstanding, net_debt or 0)
         if core["equity_value"] < target_equity:
             low = mid
@@ -153,8 +158,55 @@ def reverse_dcf(
     implied = round((low + high) / 2, 4)
     return {
         "implied_growth_rate": implied,
+        "implied_g2": round(min(implied * 0.6, 0.12), 4),
         "current_price": current_price,
         "interpretation": _interpret_implied(implied),
+    }
+
+
+def dcf_for_ticker(ticker: str, g1: float = 0.12, g2: float = 0.07) -> dict:
+    """Convenience wrapper: fetches data from yfinance, runs forward + reverse DCF.
+    Returns combined result with all three scenarios + reverse DCF."""
+    from backend.services.market_data import (
+        get_stock_fundamentals, get_fcf_3yr_average, get_sbc, get_net_debt,
+    )
+
+    fund = get_stock_fundamentals(ticker).value
+    fcf_3yr = get_fcf_3yr_average(ticker)
+    sbc = get_sbc(ticker)
+    net_debt = get_net_debt(ticker) or 0
+    shares = fund.get("shares_outstanding")
+    price = fund.get("price")
+    revenue = fund.get("total_revenue")
+
+    starting_fcf = fcf_3yr or fund.get("free_cash_flow")
+    if not starting_fcf or starting_fcf <= 0 or not shares:
+        return {"error": f"Insufficient data for {ticker}: FCF={starting_fcf}, shares={shares}"}
+
+    if sbc:
+        starting_fcf = adjust_fcf_for_sbc(starting_fcf, sbc, revenue)
+
+    rev_dcf = reverse_dcf(
+        current_price=price, starting_fcf=starting_fcf,
+        shares_outstanding=shares, net_debt=net_debt,
+    ) if price else None
+
+    forward = {
+        "bear": calculate_dcf(starting_fcf, 0.05, 0.03, shares_outstanding=shares, net_debt=net_debt),
+        "base": calculate_dcf(starting_fcf, g1, g2, shares_outstanding=shares, net_debt=net_debt),
+        "bull": calculate_dcf(starting_fcf, 0.20, 0.12, shares_outstanding=shares, net_debt=net_debt),
+    }
+
+    return {
+        "ticker": ticker,
+        "price": price,
+        "starting_fcf": round(starting_fcf),
+        "fcf_3yr_avg": round(fcf_3yr) if fcf_3yr else None,
+        "sbc_adjusted": bool(sbc and revenue and sbc / revenue > DCF_DEFAULTS["sbc_threshold"]),
+        "net_debt": round(net_debt),
+        "shares_outstanding": shares,
+        "reverse_dcf": rev_dcf,
+        "forward_dcf": forward,
     }
 
 

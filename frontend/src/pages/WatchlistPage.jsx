@@ -5,9 +5,16 @@ import DigestList from '../components/DigestList'
 
 export default function WatchlistPage() {
   const [watchlist, setWatchlist] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const navigate = useNavigate()
 
-  const load = () => getWatchlist().then(setWatchlist).catch(() => {})
+  const load = () => {
+    getWatchlist()
+      .then(setWatchlist)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }
   useEffect(() => { load() }, [])
 
   const handleRemove = async (ticker) => {
@@ -21,7 +28,15 @@ export default function WatchlistPage() {
 
       <DigestList />
 
-      {watchlist.length === 0 ? (
+      {error && (
+        <div className="rounded-lg p-4 mb-4 text-sm" style={{ backgroundColor: '#fef2f2', color: '#e5484d', border: '1px solid #fca5a5' }}>
+          Failed to load watchlist: {error}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-sm" style={{ color: '#6b7280' }}>Loading watchlist...</p>
+      ) : watchlist.length === 0 ? (
         <p className="text-sm" style={{ color: '#6b7280' }}>No stocks on watchlist. Use the Screener to add stocks.</p>
       ) : (
         <div className="overflow-x-auto">

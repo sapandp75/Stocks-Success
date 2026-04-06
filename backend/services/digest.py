@@ -4,29 +4,30 @@ Aggregates: insider transactions, press releases, analyst changes.
 All scoped to watchlist tickers only.
 """
 import os
+import logging
 import httpx
 from datetime import datetime, timedelta
-from backend.database import get_db
+from backend.database import get_db, is_fresh
 from backend.config import RESEARCH_CONFIG
 
+logger = logging.getLogger(__name__)
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 FMP_API_KEY = os.getenv("FMP_API_KEY", "")
 
 
 def refresh_digest(tickers: list[str]):
-    """Fetch material events for given tickers. Respects cache TTL."""
-    db = get_db()
-    last_refresh = db.execute(
-        "SELECT MAX(fetched_at) as latest FROM digest_events"
-    ).fetchone()
-    db.close()
-
-    if last_refresh and last_refresh["latest"]:
-        latest = datetime.fromisoformat(last_refresh["latest"])
-        if (datetime.now() - latest).total_seconds() < RESEARCH_CONFIG["cache_ttl_hours"] * 3600:
-            return
-
+    """Fetch material events for given tickers. Respects per-ticker cache TTL."""
     for ticker in tickers:
+        with get_db() as db:
+            last_refresh = db.execute(
+                "SELECT MAX(fetched_at) as latest FROM digest_events WHERE ticker = ?",
+                (ticker,)
+            ).fetchone()
+
+        if last_refresh and last_refresh["latest"]:
+            if is_fresh(last_refresh["latest"], RESEARCH_CONFIG["cache_ttl_hours"]):
+                continue
+
         _fetch_insider_transactions(ticker)
         _fetch_fmp_press_releases(ticker)
         _fetch_analyst_changes(ticker)
@@ -64,7 +65,7 @@ def _fetch_insider_transactions(ticker: str):
             _save_digest_event(ticker, txn_type, headline, f"Filed {txn_date}", txn_date, "finnhub")
 
     except Exception:
-        pass
+        logger.warning("Failed to fetch insider transactions for %s", ticker, exc_info=True)
 
 
 def _fetch_fmp_press_releases(ticker: str):
@@ -74,6 +75,8 @@ def _fetch_fmp_press_releases(ticker: str):
     try:
         url = f"https://financialmodelingprep.com/api/v3/press-releases/{ticker}?limit=5&apikey={FMP_API_KEY}"
         resp = httpx.get(url, timeout=10)
+        if resp.status_code == 403:
+            return  # FMP plan doesn't include press-releases endpoint
         releases = resp.json()
 
         lookback = datetime.now() - timedelta(days=RESEARCH_CONFIG["digest_lookback_days"])
@@ -95,7 +98,7 @@ def _fetch_fmp_press_releases(ticker: str):
                 url=pr.get("url", "")
             )
     except Exception:
-        pass
+        logger.warning("Failed to fetch press releases for %s", ticker, exc_info=True)
 
 
 def _fetch_analyst_changes(ticker: str):
@@ -131,59 +134,60 @@ def _fetch_analyst_changes(ticker: str):
                     current.get("period", ""), "finnhub"
                 )
     except Exception:
-        pass
+        logger.warning("Failed to fetch analyst changes for %s", ticker, exc_info=True)
 
 
 def _save_digest_event(ticker: str, event_type: str, headline: str,
                        detail: str, event_date: str, source: str, url: str = ""):
-    db = get_db()
-    existing = db.execute(
-        "SELECT id FROM digest_events WHERE ticker = ? AND headline = ? AND event_date = ?",
-        (ticker, headline, event_date)
-    ).fetchone()
-    if not existing:
-        db.execute("""
-            INSERT INTO digest_events (ticker, event_type, headline, detail, event_date, source, url)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (ticker, event_type, headline, detail, event_date, source, url))
-        db.commit()
-    db.close()
+    with get_db() as db:
+        existing = db.execute(
+            "SELECT id FROM digest_events WHERE ticker = ? AND headline = ? AND event_date = ?",
+            (ticker, headline, event_date)
+        ).fetchone()
+        if not existing:
+            db.execute("""
+                INSERT INTO digest_events (ticker, event_type, headline, detail, event_date, source, url)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (ticker, event_type, headline, detail, event_date, source, url))
+            db.commit()
 
 
-def get_digest(tickers: list[str] | None = None, unseen_only: bool = False) -> list[dict]:
-    """Get digest events, optionally filtered to specific tickers."""
-    db = get_db()
+def get_digest(tickers: list[str] | None = None, unseen_only: bool = False, auto_refresh: bool = True) -> list[dict]:
+    """Get digest events, optionally filtered to specific tickers.
+    When auto_refresh=True (default), refreshes stale data before querying."""
+    if auto_refresh and tickers:
+        refresh_digest(tickers)
 
     lookback = (datetime.now() - timedelta(days=RESEARCH_CONFIG["digest_lookback_days"])).isoformat()
 
-    if tickers:
-        placeholders = ",".join("?" * len(tickers))
-        query = f"""
-            SELECT * FROM digest_events
-            WHERE ticker IN ({placeholders}) AND fetched_at > ?
-            {"AND seen = 0" if unseen_only else ""}
-            ORDER BY event_date DESC
-            LIMIT 50
-        """
-        rows = db.execute(query, (*tickers, lookback)).fetchall()
-    else:
-        query = f"""
-            SELECT * FROM digest_events
-            WHERE fetched_at > ?
-            {"AND seen = 0" if unseen_only else ""}
-            ORDER BY event_date DESC
-            LIMIT 50
-        """
-        rows = db.execute(query, (lookback,)).fetchall()
-
-    db.close()
+    with get_db() as db:
+        if tickers:
+            placeholders = ",".join("?" * len(tickers))
+            query = f"""
+                SELECT * FROM digest_events
+                WHERE ticker IN ({placeholders}) AND fetched_at > ?
+                {"AND seen = 0" if unseen_only else ""}
+                ORDER BY event_date DESC
+                LIMIT 50
+            """
+            rows = db.execute(query, (*tickers, lookback)).fetchall()
+        else:
+            query = f"""
+                SELECT * FROM digest_events
+                WHERE fetched_at > ?
+                {"AND seen = 0" if unseen_only else ""}
+                ORDER BY event_date DESC
+                LIMIT 50
+            """
+            rows = db.execute(query, (lookback,)).fetchall()
     return [dict(r) for r in rows]
 
 
 def mark_digest_seen(event_ids: list[int]):
     """Mark digest events as seen."""
-    db = get_db()
-    placeholders = ",".join("?" * len(event_ids))
-    db.execute(f"UPDATE digest_events SET seen = 1 WHERE id IN ({placeholders})", event_ids)
-    db.commit()
-    db.close()
+    if not event_ids:
+        return
+    with get_db() as db:
+        placeholders = ",".join("?" * len(event_ids))
+        db.execute(f"UPDATE digest_events SET seen = 1 WHERE id IN ({placeholders})", event_ids)
+        db.commit()

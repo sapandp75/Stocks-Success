@@ -35,10 +35,11 @@ export async function putJSON(path, body) {
 // API helpers
 export const getRegime = () => fetchJSON('/regime')
 export const getLatestScan = () => fetchJSON('/screener/latest')
-export const runScan = (type = 'weekly') => fetchJSON(`/screener/scan?scan_type=${type}`)
+export const startScan = (type = 'weekly') => postJSON(`/screener/scan?scan_type=${type}`, {})
+export const getScanStatus = () => fetchJSON('/screener/scan/status')
 export const getDeepDive = (ticker) => fetchJSON(`/deep-dive/${ticker}`)
 export const postDeepDive = (ticker, data) => postJSON(`/deep-dive/${ticker}`, data)
-export const scanOptions = (tickers) => fetchJSON(`/options/scan?tickers=${tickers}`)
+export const scanOptions = (tickers) => fetchJSON(`/options/scan?tickers=${encodeURIComponent(tickers)}`)
 export const getWatchlist = () => fetchJSON('/watchlist')
 export const addToWatchlist = (entry) => postJSON('/watchlist', entry)
 export const removeFromWatchlist = (ticker) => deleteJSON(`/watchlist/${ticker}`)

@@ -8,6 +8,7 @@ from backend.services.sentiment import fetch_sentiment
 from backend.services.transcripts import fetch_latest_transcript
 from backend.services.digest import get_digest, refresh_digest, mark_digest_seen
 from backend.database import get_db
+from backend.validators import validate_ticker
 
 router = APIRouter(prefix="/api/research", tags=["research"])
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/research", tags=["research"])
 @router.get("/{ticker}")
 def get_research_for_ticker(ticker: str):
     """Get all research context for a single ticker."""
-    ticker = ticker.upper()
+    ticker = validate_ticker(ticker)
     research = get_all_research(ticker)
     sentiment = fetch_sentiment(ticker)
     transcript = fetch_latest_transcript(ticker)
@@ -37,7 +38,7 @@ def get_research_for_ticker(ticker: str):
 @router.get("/{ticker}/sentiment")
 def get_sentiment(ticker: str):
     """Sentiment only — used by screener for lightweight column data."""
-    return fetch_sentiment(ticker.upper())
+    return fetch_sentiment(validate_ticker(ticker))
 
 
 @router.post("/digest/mark-seen")

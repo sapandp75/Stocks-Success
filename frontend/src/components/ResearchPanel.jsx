@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import SentimentBadge from './SentimentBadge'
+import { fetchResearch } from '../api'
 
 export default function ResearchPanel({ ticker, initialData }) {
   const [data, setData] = useState(initialData || null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     if (initialData) {
@@ -12,14 +14,15 @@ export default function ResearchPanel({ ticker, initialData }) {
     }
     if (!ticker) return
     setLoading(true)
-    fetch(`/api/research/${ticker}`)
-      .then(r => r.json())
+    setError(null)
+    fetchResearch(ticker)
       .then(setData)
-      .catch(() => {})
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [ticker, initialData])
 
   if (loading) return <p className="text-sm" style={{ color: '#6b7280' }}>Loading research...</p>
+  if (error) return <p className="text-sm" style={{ color: '#e5484d' }}>Failed to load research: {error}</p>
   if (!data) return <p className="text-sm italic" style={{ color: '#6b7280' }}>No research data available.</p>
 
   return (

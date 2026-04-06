@@ -7,6 +7,7 @@ export default function CollapsibleSection({ title, number, accentColor = '#e2e4
     <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: '#e2e4e8', borderLeftWidth: 3, borderLeftColor: accentColor }}>
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         className="w-full flex items-center justify-between px-5 py-3 hover:bg-[#f7f8fa] transition-colors"
       >
         <div className="flex items-center gap-3">

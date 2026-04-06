@@ -21,9 +21,8 @@ def regime_check():
 def get_watchlist_earnings():
     """Upcoming earnings dates for watchlist tickers."""
     from backend.services.market_data import get_stock_fundamentals
-    db = get_db()
-    rows = db.execute("SELECT ticker FROM watchlist WHERE status = 'WATCHING'").fetchall()
-    db.close()
+    with get_db() as db:
+        rows = db.execute("SELECT ticker FROM watchlist WHERE status = 'WATCHING'").fetchall()
 
     upcoming = []
     for r in rows:

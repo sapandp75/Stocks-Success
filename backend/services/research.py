@@ -3,48 +3,41 @@ Research Intelligence — RSS fetcher + aggregator + SQLite cache.
 Only fetches for tickers you care about. Caches aggressively.
 """
 import re
+import logging
 import feedparser
-from datetime import datetime
-from backend.database import get_db
+from backend.database import get_db, is_fresh
 from backend.config import (
     RESEARCH_CONFIG, SA_RSS_TEMPLATE, SUBSTACK_FEEDS,
 )
 
-
-def _is_fresh(fetched_at: str, ttl_hours: int) -> bool:
-    if not fetched_at:
-        return False
-    fetched = datetime.fromisoformat(fetched_at)
-    return (datetime.now() - fetched).total_seconds() < ttl_hours * 3600
+logger = logging.getLogger(__name__)
 
 
 def _save_research(ticker: str, source: str, content_type: str,
                    title: str, summary: str, url: str,
                    published_date: str, raw_json: str = ""):
-    db = get_db()
-    existing = db.execute(
-        "SELECT id FROM research_cache WHERE ticker = ? AND url = ?",
-        (ticker, url)
-    ).fetchone()
-    if not existing:
-        db.execute("""
-            INSERT INTO research_cache (ticker, source, content_type, title, summary, url, published_date, raw_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (ticker, source, content_type, title, summary[:500] if summary else "", url, published_date, raw_json))
-        db.commit()
-    db.close()
+    with get_db() as db:
+        existing = db.execute(
+            "SELECT id FROM research_cache WHERE ticker = ? AND url = ?",
+            (ticker, url)
+        ).fetchone()
+        if not existing:
+            db.execute("""
+                INSERT INTO research_cache (ticker, source, content_type, title, summary, url, published_date, raw_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (ticker, source, content_type, title, summary[:500] if summary else "", url, published_date, raw_json))
+            db.commit()
 
 
 def fetch_seeking_alpha(ticker: str) -> list[dict]:
     """Fetch latest SA articles for a ticker via RSS. No API key needed."""
-    db = get_db()
-    latest = db.execute(
-        "SELECT fetched_at FROM research_cache WHERE ticker = ? AND source = 'seeking_alpha' ORDER BY fetched_at DESC LIMIT 1",
-        (ticker,)
-    ).fetchone()
-    db.close()
+    with get_db() as db:
+        latest = db.execute(
+            "SELECT fetched_at FROM research_cache WHERE ticker = ? AND source = 'seeking_alpha' ORDER BY fetched_at DESC LIMIT 1",
+            (ticker,)
+        ).fetchone()
 
-    if latest and _is_fresh(latest["fetched_at"], RESEARCH_CONFIG["cache_ttl_hours"]):
+    if latest and is_fresh(latest["fetched_at"], RESEARCH_CONFIG["cache_ttl_hours"]):
         return _get_cached(ticker, "seeking_alpha")
 
     url = SA_RSS_TEMPLATE.format(ticker=ticker)
@@ -62,21 +55,20 @@ def fetch_seeking_alpha(ticker: str) -> list[dict]:
                 published_date=entry.get("published", ""),
             )
     except Exception:
-        pass
+        logger.warning("Failed to fetch Seeking Alpha RSS for %s", ticker, exc_info=True)
 
     return _get_cached(ticker, "seeking_alpha")
 
 
 def fetch_substack_mentions(ticker: str) -> list[dict]:
     """Check curated Substack feeds for mentions of this ticker."""
-    db = get_db()
-    latest = db.execute(
-        "SELECT fetched_at FROM research_cache WHERE ticker = ? AND source = 'substack' ORDER BY fetched_at DESC LIMIT 1",
-        (ticker,)
-    ).fetchone()
-    db.close()
+    with get_db() as db:
+        latest = db.execute(
+            "SELECT fetched_at FROM research_cache WHERE ticker = ? AND source = 'substack' ORDER BY fetched_at DESC LIMIT 1",
+            (ticker,)
+        ).fetchone()
 
-    if latest and _is_fresh(latest["fetched_at"], RESEARCH_CONFIG["cache_ttl_hours"]):
+    if latest and is_fresh(latest["fetched_at"], RESEARCH_CONFIG["cache_ttl_hours"]):
         return _get_cached(ticker, "substack")
 
     for feed_info in SUBSTACK_FEEDS:
@@ -103,15 +95,14 @@ def fetch_substack_mentions(ticker: str) -> list[dict]:
 
 
 def _get_cached(ticker: str, source: str) -> list[dict]:
-    db = get_db()
-    rows = db.execute("""
-        SELECT title, summary, url, published_date, source, content_type
-        FROM research_cache
-        WHERE ticker = ? AND source = ?
-        ORDER BY published_date DESC
-        LIMIT ?
-    """, (ticker, source, RESEARCH_CONFIG["max_articles_per_ticker"])).fetchall()
-    db.close()
+    with get_db() as db:
+        rows = db.execute("""
+            SELECT title, summary, url, published_date, source, content_type
+            FROM research_cache
+            WHERE ticker = ? AND source = ?
+            ORDER BY published_date DESC
+            LIMIT ?
+        """, (ticker, source, RESEARCH_CONFIG["max_articles_per_ticker"])).fetchall()
     return [dict(r) for r in rows]
 
 

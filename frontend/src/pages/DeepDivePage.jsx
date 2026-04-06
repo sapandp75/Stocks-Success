@@ -48,11 +48,16 @@ export default function DeepDivePage() {
   const [input, setInput] = useState('')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const loadData = (t) => {
     if (!t) return
     setLoading(true)
-    getDeepDive(t).then(setData).catch(() => {}).finally(() => setLoading(false))
+    setError(null)
+    getDeepDive(t)
+      .then(setData)
+      .catch(e => { setError(e.message); setData(null) })
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => {
@@ -94,6 +99,12 @@ export default function DeepDivePage() {
 
       {loading && <p style={{ color: '#6b7280' }}>Loading deep dive data...</p>}
 
+      {error && (
+        <div className="rounded-lg p-4 mb-4 text-sm" style={{ backgroundColor: '#fef2f2', color: '#e5484d', border: '1px solid #fca5a5' }}>
+          Failed to load data for {input}: {error}
+        </div>
+      )}
+
       {data && !ai && (
         <AiAnalyzeButton ticker={data.ticker} onComplete={() => loadData(data.ticker)} />
       )}
@@ -117,7 +128,7 @@ export default function DeepDivePage() {
               </div>
             )}
             <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
-              <MetricCell label="Price" value={`$${price?.toFixed(2)}`} />
+              <MetricCell label="Price" value={price != null ? `$${price.toFixed(2)}` : '—'} />
               <MetricCell label="Mkt Cap" value={fmt(f.market_cap, 'money')} />
               <MetricCell label="Fwd P/E" value={fmt(f.forward_pe, 'pe')} />
               <MetricCell label="Trail P/E" value={fmt(f.trailing_pe, 'pe')} />
@@ -144,7 +155,7 @@ export default function DeepDivePage() {
           <CollapsibleSection title="First Impression" number="2" accentColor="#6366f1" defaultOpen={!!ai}>
             <AiText
               text={ai?.first_impression}
-              placeholder="No AI analysis yet. Run: python bridge/deep_dive_worker.py {ticker} --post"
+              placeholder={`No AI analysis yet. Run: python bridge/deep_dive_worker.py ${data.ticker} --post`}
             />
           </CollapsibleSection>
 

@@ -1,5 +1,11 @@
+import time
 import yfinance as yf
 from backend.services.market_data import get_moving_averages
+
+# Module-level regime cache (1 hour TTL — regime changes max once/day)
+_regime_cache: dict | None = None
+_regime_cache_time: float = 0
+_REGIME_CACHE_TTL = 3600
 
 
 def classify_direction(price: float, ema20: float, sma50: float, sma200: float) -> str:
@@ -145,6 +151,12 @@ def calculate_market_breadth() -> dict:
 
 
 def get_full_regime() -> dict:
+    """Get full market regime. Cached in memory for 1 hour."""
+    global _regime_cache, _regime_cache_time
+    now = time.time()
+    if _regime_cache is not None and (now - _regime_cache_time) < _REGIME_CACHE_TTL:
+        return _regime_cache
+
     spy_ma = get_moving_averages("SPY")
     qqq_ma = get_moving_averages("QQQ")
 
@@ -162,4 +174,8 @@ def get_full_regime() -> dict:
     qqq_info = {**qqq_ma, "direction": qqq_dir, "ticker": "QQQ"}
 
     regime = determine_regime(spy_info, qqq_info, vix)
-    return {"spy": spy_info, "qqq": qqq_info, "regime": regime}
+    result = {"spy": spy_info, "qqq": qqq_info, "regime": regime}
+
+    _regime_cache = result
+    _regime_cache_time = now
+    return result

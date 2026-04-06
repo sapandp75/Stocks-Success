@@ -1,14 +1,61 @@
 import { useState, useEffect } from 'react'
 import { getPositions, getPnlSummary, closePosition } from '../api'
 
+function CloseForm({ onSubmit, onCancel }) {
+  const [price, setPrice] = useState('')
+  const [reason, setReason] = useState('')
+  const valid = price !== '' && !isNaN(parseFloat(price)) && parseFloat(price) > 0
+
+  return (
+    <div className="flex flex-col gap-1">
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        placeholder="Exit price"
+        className="border rounded px-2 py-1 text-xs w-24"
+        style={{ borderColor: '#e2e4e8' }}
+        value={price}
+        onChange={e => setPrice(e.target.value)}
+        autoFocus
+      />
+      <input
+        placeholder="Reason"
+        className="border rounded px-2 py-1 text-xs w-24"
+        style={{ borderColor: '#e2e4e8' }}
+        value={reason}
+        onChange={e => setReason(e.target.value)}
+      />
+      <div className="flex gap-1">
+        <button
+          onClick={() => onSubmit(parseFloat(price), reason)}
+          disabled={!valid}
+          className="text-xs font-medium disabled:opacity-40"
+          style={{ color: '#00a562' }}
+        >
+          Confirm
+        </button>
+        <button onClick={onCancel} className="text-xs" style={{ color: '#6b7280' }}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
 export default function PositionsPage() {
   const [positions, setPositions] = useState([])
   const [summary, setSummary] = useState(null)
   const [tab, setTab] = useState('open')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [closing, setClosing] = useState(null) // id of position being closed
 
   const load = () => {
-    getPositions().then(setPositions).catch(() => {})
-    getPnlSummary().then(setSummary).catch(() => {})
+    Promise.all([
+      getPositions().then(setPositions),
+      getPnlSummary().then(setSummary),
+    ])
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
 
@@ -16,18 +63,30 @@ export default function PositionsPage() {
     tab === 'open' ? p.status === 'OPEN' : p.status === 'CLOSED'
   )
 
-  const handleClose = async (id) => {
-    const price = prompt('Exit price:')
-    const reason = prompt('Exit reason:')
-    if (price) {
-      await closePosition(id, { exit_price: parseFloat(price), exit_reason: reason || '' })
+  const handleClose = (id) => setClosing(id)
+
+  const submitClose = async (id, exitPrice, exitReason) => {
+    if (isNaN(exitPrice) || exitPrice <= 0) return
+    try {
+      await closePosition(id, { exit_price: exitPrice, exit_reason: exitReason || '' })
+      setClosing(null)
       load()
+    } catch (e) {
+      setError(e.message)
     }
   }
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold mb-4" style={{ color: '#1a1a2e' }}>Positions</h1>
+
+      {error && (
+        <div className="rounded-lg p-4 mb-4 text-sm" style={{ backgroundColor: '#fef2f2', color: '#e5484d', border: '1px solid #fca5a5' }}>
+          {error}
+        </div>
+      )}
+
+      {loading && <p className="text-sm mb-4" style={{ color: '#6b7280' }}>Loading positions...</p>}
 
       {summary && (
         <div className="grid grid-cols-4 gap-4 mb-6">
@@ -86,9 +145,16 @@ export default function PositionsPage() {
                   <td className="py-2 px-2 max-w-[150px] truncate" style={{ color: '#6b7280' }}>{p.thesis || '—'}</td>
                   <td className="py-2 px-2">
                     {tab === 'open' ? (
-                      <button onClick={() => handleClose(p.id)} className="text-xs font-medium" style={{ color: '#e5484d' }}>
-                        Close
-                      </button>
+                      closing === p.id ? (
+                        <CloseForm
+                          onSubmit={(price, reason) => submitClose(p.id, price, reason)}
+                          onCancel={() => setClosing(null)}
+                        />
+                      ) : (
+                        <button onClick={() => handleClose(p.id)} className="text-xs font-medium" style={{ color: '#e5484d' }}>
+                          Close
+                        </button>
+                      )
                     ) : (
                       <span className="text-xs" style={{ color: '#6b7280' }}>
                         ${p.exit_price} · {p.exit_reason}

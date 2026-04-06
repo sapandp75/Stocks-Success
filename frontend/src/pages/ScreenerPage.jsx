@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { getLatestScan, runScan } from '../api'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { getLatestScan, startScan, getScanStatus } from '../api'
 import StockCard from '../components/StockCard'
 import SectorBar from '../components/SectorBar'
 import FilterBar from '../components/FilterBar'
@@ -92,16 +92,50 @@ export default function ScreenerPage() {
       })
   }, [])
 
+  const pollRef = useRef(null)
+
+  const pollStatus = useCallback(() => {
+    pollRef.current = setInterval(async () => {
+      try {
+        const status = await getScanStatus()
+        if (status.status === 'complete') {
+          clearInterval(pollRef.current)
+          const result = await getLatestScan()
+          if (result && !result.error) setScan(result)
+          setLoading(false)
+        } else if (status.status === 'error') {
+          clearInterval(pollRef.current)
+          setError(status.error || 'Scan failed')
+          setLoading(false)
+        }
+      } catch {
+        clearInterval(pollRef.current)
+        setError('Lost connection to scan')
+        setLoading(false)
+      }
+    }, 3000)
+  }, [])
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
+
   const handleScan = async (type) => {
     setLoading(true)
     setError(null)
     try {
-      const result = await runScan(type)
-      setScan(result)
+      if (type === 'daily') {
+        // Daily scans run inline — small enough
+        const result = await startScan(type)
+        setScan(result)
+        setLoading(false)
+      } else {
+        // Weekly: POST to start, then poll
+        await startScan(type)
+        pollStatus()
+      }
     } catch (e) {
       setError(e.message)
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const getCandidates = () => {
@@ -119,6 +153,11 @@ export default function ScreenerPage() {
   const candidates = applySortAndFilter(raw, filters)
   const b1Count = (scan?.b1_candidates || []).length
   const b2Count = (scan?.b2_candidates || []).length
+  const bothCount = useMemo(() => {
+    if (!scan) return 0
+    const b1Set = new Set((scan.b1_candidates || []).map(s => s.ticker))
+    return (scan.b2_candidates || []).filter(s => b1Set.has(s.ticker)).length
+  }, [scan])
 
   if (initialLoading) {
     return (
@@ -218,11 +257,7 @@ export default function ScreenerPage() {
                 {t}
                 {t === 'B1' && ` (${b1Count})`}
                 {t === 'B2' && ` (${b2Count})`}
-                {t === 'Both' && (() => {
-                  const b1Set = new Set((scan.b1_candidates || []).map(s => s.ticker))
-                  const both = (scan.b2_candidates || []).filter(s => b1Set.has(s.ticker)).length
-                  return ` (${both})`
-                })()}
+                {t === 'Both' && ` (${bothCount})`}
               </button>
             ))}
           </div>

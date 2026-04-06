@@ -9,20 +9,9 @@ import pandas as pd
 from datetime import datetime
 
 from backend.config import TECHNICALS_CONFIG
-from backend.database import get_db
+from backend.database import get_db, is_fresh
 from backend.services.market_data import get_price_history
 from backend.services.regime_checker import classify_direction
-
-
-# ---------------------------------------------------------------------------
-# Cache helper
-# ---------------------------------------------------------------------------
-
-def _is_fresh(fetched_at: str, ttl_hours: int) -> bool:
-    if not fetched_at:
-        return False
-    fetched = datetime.fromisoformat(fetched_at)
-    return (datetime.now() - fetched).total_seconds() < ttl_hours * 3600
 
 
 # ---------------------------------------------------------------------------
@@ -302,13 +291,12 @@ def classify_stock_direction(
 def get_full_technicals(ticker: str) -> dict:
     """Fetch OHLCV, compute all indicators, cache in SQLite. Returns full dict."""
     # Check cache
-    db = get_db()
-    cached = db.execute(
-        "SELECT * FROM technicals_cache WHERE ticker = ?", (ticker,)
-    ).fetchone()
-    db.close()
+    with get_db() as db:
+        cached = db.execute(
+            "SELECT * FROM technicals_cache WHERE ticker = ?", (ticker,)
+        ).fetchone()
 
-    if cached and _is_fresh(
+    if cached and is_fresh(
         cached["fetched_at"], TECHNICALS_CONFIG["cache_ttl_hours"]
     ):
         result = dict(cached)
@@ -364,46 +352,45 @@ def get_full_technicals(ticker: str) -> dict:
     resistance_1 = sr["resistance"][0] if len(sr["resistance"]) > 0 else None
     resistance_2 = sr["resistance"][1] if len(sr["resistance"]) > 1 else None
 
-    db = get_db()
-    db.execute(
-        """
-        INSERT OR REPLACE INTO technicals_cache
-        (ticker, rsi, macd_value, macd_signal, macd_histogram, macd_crossover,
-         direction, ema20, sma50, sma200, adx,
-         bollinger_upper, bollinger_lower, bollinger_pct_b,
-         volume_relative, volume_trend,
-         support_1, support_2, resistance_1, resistance_2,
-         rs_vs_spy_20d, rs_vs_spy_60d, data_json, fetched_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        """,
-        (
-            ticker,
-            rsi,
-            macd["macd"],
-            macd["signal"],
-            macd["histogram"],
-            macd["crossover"],
-            direction,
-            round(ema20, 2),
-            round(sma50, 2),
-            round(sma200, 2),
-            adx,
-            boll["upper"],
-            boll["lower"],
-            boll["pct_b"],
-            vol["relative_volume"],
-            vol["trend"],
-            support_1,
-            support_2,
-            resistance_1,
-            resistance_2,
-            rs["rs_20d"],
-            rs["rs_60d"],
-            json.dumps(extras),
-        ),
-    )
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO technicals_cache
+            (ticker, rsi, macd_value, macd_signal, macd_histogram, macd_crossover,
+             direction, ema20, sma50, sma200, adx,
+             bollinger_upper, bollinger_lower, bollinger_pct_b,
+             volume_relative, volume_trend,
+             support_1, support_2, resistance_1, resistance_2,
+             rs_vs_spy_20d, rs_vs_spy_60d, data_json, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (
+                ticker,
+                rsi,
+                macd["macd"],
+                macd["signal"],
+                macd["histogram"],
+                macd["crossover"],
+                direction,
+                round(ema20, 2),
+                round(sma50, 2),
+                round(sma200, 2),
+                adx,
+                boll["upper"],
+                boll["lower"],
+                boll["pct_b"],
+                vol["relative_volume"],
+                vol["trend"],
+                support_1,
+                support_2,
+                resistance_1,
+                resistance_2,
+                rs["rs_20d"],
+                rs["rs_60d"],
+                json.dumps(extras),
+            ),
+        )
+        db.commit()
 
     return {
         "ticker": ticker,

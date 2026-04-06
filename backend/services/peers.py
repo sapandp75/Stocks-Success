@@ -3,21 +3,12 @@ Peer Comparison — Sector-based ranking among S&P 500 peers.
 Ranks ticker on PE, margin, growth vs same-sector companies.
 """
 import json
-import random
 import yfinance as yf
-from datetime import datetime
-from backend.database import get_db
+from backend.database import get_db, is_fresh
 from backend.config import ENRICHMENT_CONFIG
 from backend.services.sp500 import get_sp500_tickers
 from backend.services.market_data import get_stock_fundamentals, get_moving_averages
 from backend.services.regime_checker import classify_direction
-
-
-def _is_fresh(fetched_at: str, ttl_hours: int) -> bool:
-    if not fetched_at:
-        return False
-    fetched = datetime.fromisoformat(fetched_at)
-    return (datetime.now() - fetched).total_seconds() < ttl_hours * 3600
 
 
 def _rank_among_peers(ticker: str, peers: list[dict]) -> dict:
@@ -76,11 +67,10 @@ def get_peer_comparison(ticker: str) -> dict:
     """Find same-sector peers from S&P 500, rank ticker among them. Cached."""
     ttl = ENRICHMENT_CONFIG["peer_ttl_hours"]
 
-    db = get_db()
-    cached = db.execute("SELECT * FROM peer_cache WHERE ticker = ?", (ticker,)).fetchone()
-    db.close()
+    with get_db() as db:
+        cached = db.execute("SELECT * FROM peer_cache WHERE ticker = ?", (ticker,)).fetchone()
 
-    if cached and _is_fresh(cached["fetched_at"], ttl):
+    if cached and is_fresh(cached["fetched_at"], ttl):
         data = json.loads(cached["peers_json"]) if cached["peers_json"] else {}
         return data
 
@@ -94,19 +84,24 @@ def get_peer_comparison(ticker: str) -> dict:
     if not target_sector:
         return {"peers": [], "ticker_rank": {}, "sector": "Unknown"}
 
-    # Find same-sector peers from S&P 500
+    # Find same-sector peers from S&P 500 — use yfinance sector data
     try:
         sp500 = get_sp500_tickers()
     except Exception:
         sp500 = []
 
+    # Filter by sector using industry_key from the SP500 list
+    # Check candidates in random-shuffled order to get sector diversity
+    import random
     candidates = [t for t in sp500 if t != ticker]
     random.shuffle(candidates)
 
     peer_tickers = []
     checked = 0
     for t in candidates:
-        if checked >= 30 or len(peer_tickers) >= 8:
+        if len(peer_tickers) >= 8:
+            break
+        if checked >= 60:
             break
         try:
             info = yf.Ticker(t).info
@@ -122,7 +117,7 @@ def get_peer_comparison(ticker: str) -> dict:
     for t in all_tickers:
         try:
             fund = get_stock_fundamentals(t)
-            data = fund.data if hasattr(fund, "data") else fund
+            data = fund.value if hasattr(fund, "value") else fund
             ma = get_moving_averages(t)
             direction = ""
             if ma:
@@ -150,13 +145,12 @@ def get_peer_comparison(ticker: str) -> dict:
     }
 
     # Cache
-    db = get_db()
-    db.execute(
-        """INSERT OR REPLACE INTO peer_cache (ticker, peers_json, fetched_at)
-           VALUES (?, ?, datetime('now'))""",
-        (ticker, json.dumps(result)),
-    )
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute(
+            """INSERT OR REPLACE INTO peer_cache (ticker, peers_json, fetched_at)
+               VALUES (?, ?, datetime('now'))""",
+            (ticker, json.dumps(result)),
+        )
+        db.commit()
 
     return result

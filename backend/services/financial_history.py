@@ -6,7 +6,7 @@ import json
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
-from backend.database import get_db
+from backend.database import get_db, is_fresh
 from backend.config import ENRICHMENT_CONFIG
 
 
@@ -15,13 +15,6 @@ METRICS = [
     "sbc", "gross_margin", "operating_margin", "net_margin",
     "debt_to_equity", "shares_outstanding",
 ]
-
-
-def _is_fresh(fetched_at: str, ttl_hours: int) -> bool:
-    if not fetched_at:
-        return False
-    fetched = datetime.fromisoformat(fetched_at)
-    return (datetime.now() - fetched).total_seconds() < ttl_hours * 3600
 
 
 def _safe_get(df: pd.DataFrame, labels: list[str], col) -> float | None:
@@ -95,14 +88,13 @@ def get_financial_history(ticker: str) -> dict:
     ttl = ENRICHMENT_CONFIG["financial_history_ttl_hours"]
 
     # Check cache
-    db = get_db()
-    cached = db.execute(
-        "SELECT * FROM financial_history_cache WHERE ticker = ? ORDER BY year DESC",
-        (ticker,),
-    ).fetchall()
-    db.close()
+    with get_db() as db:
+        cached = db.execute(
+            "SELECT * FROM financial_history_cache WHERE ticker = ? ORDER BY year DESC",
+            (ticker,),
+        ).fetchall()
 
-    if cached and _is_fresh(cached[0]["fetched_at"], ttl):
+    if cached and is_fresh(cached[0]["fetched_at"], ttl):
         # Rebuild dict from cached rows
         result = {m: [] for m in METRICS}
         for row in cached:
@@ -130,17 +122,16 @@ def get_financial_history(ticker: str) -> dict:
     )
 
     # Store in cache
-    db = get_db()
-    now = datetime.now().isoformat()
-    for metric in METRICS:
-        for entry in result[metric]:
-            db.execute(
-                """INSERT OR REPLACE INTO financial_history_cache
-                   (ticker, metric, year, value, fetched_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (ticker, metric, entry["year"], entry["value"], now),
-            )
-    db.commit()
-    db.close()
+    with get_db() as db:
+        now = datetime.now().isoformat()
+        for metric in METRICS:
+            for entry in result[metric]:
+                db.execute(
+                    """INSERT OR REPLACE INTO financial_history_cache
+                       (ticker, metric, year, value, fetched_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (ticker, metric, entry["year"], entry["value"], now),
+                )
+        db.commit()
 
     return result

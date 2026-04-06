@@ -4,7 +4,7 @@ export default function SensitivityMatrix({ matrix, currentPrice }) {
   return (
     <div>
       <div className="text-xs mb-2" style={{ color: '#6b7280' }}>
-        WACC fixed at {(matrix[0].wacc * 100).toFixed(0)}% (spec rule). Varies growth only.
+        WACC fixed at {((matrix[0]?.wacc ?? 0.10) * 100).toFixed(0)}% (spec rule). Varies growth only.
       </div>
       <div className="overflow-x-auto">
         <table className="text-sm w-full">

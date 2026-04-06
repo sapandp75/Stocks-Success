@@ -16,24 +16,20 @@ export default function DcfCalculator({ defaults }) {
   const calculate = async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({
-        starting_fcf: inputs.starting_fcf,
-        growth_rate_1_5: inputs.growth_1_5,
-        growth_rate_6_10: inputs.growth_6_10,
-        terminal_growth: inputs.terminal_growth,
-        wacc: inputs.wacc,
-        shares_outstanding: inputs.shares,
-        net_debt: inputs.net_debt,
-      })
-      // Calculate locally using the formula
       const fcfs = []
-      let fcf = parseFloat(inputs.starting_fcf)
-      const g1 = parseFloat(inputs.growth_1_5)
-      const g2 = parseFloat(inputs.growth_6_10)
-      const tg = parseFloat(inputs.terminal_growth)
-      const wacc = parseFloat(inputs.wacc)
-      const shares = parseFloat(inputs.shares)
-      const netDebt = parseFloat(inputs.net_debt)
+      let fcf = parseFloat(inputs.starting_fcf) || 0
+      const g1 = parseFloat(inputs.growth_1_5) || 0
+      const g2 = parseFloat(inputs.growth_6_10) || 0
+      const tg = parseFloat(inputs.terminal_growth) || 0
+      const wacc = parseFloat(inputs.wacc) || 0.10
+      const shares = parseFloat(inputs.shares) || 1
+      const netDebt = parseFloat(inputs.net_debt) || 0
+
+      if (fcf <= 0 || shares <= 0 || wacc <= tg) {
+        setResult(null)
+        setLoading(false)
+        return
+      }
 
       for (let y = 1; y <= 5; y++) { fcf *= (1 + g1); fcfs.push({ year: y, fcf }) }
       for (let y = 6; y <= 10; y++) {

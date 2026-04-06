@@ -29,11 +29,12 @@ def test_position_add_and_close():
 
 
 def test_deep_dive_post_and_get():
-    client.post("/api/deep-dive/TESTDD", json={
+    ticker = "TSTDD"
+    client.post(f"/api/deep-dive/{ticker}", json={
         "first_impression": "Looks interesting",
         "bear_case_stock": "Price decline",
         "verdict": "B1", "conviction": "HIGH",
     })
-    r = client.get("/api/deep-dive/TESTDD").json()
+    r = client.get(f"/api/deep-dive/{ticker}").json()
     assert r["ai_analysis"]["first_impression"] == "Looks interesting"
     assert r["ai_analysis"]["conviction"] == "HIGH"

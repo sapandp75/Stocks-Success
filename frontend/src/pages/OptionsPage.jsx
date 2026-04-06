@@ -8,16 +8,18 @@ export default function OptionsPage() {
   const [results, setResults] = useState(null)
   const [regime, setRegime] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const handleScan = async () => {
     if (!tickers.trim()) return
     setLoading(true)
+    setError(null)
     try {
       const data = await scanOptions(tickers.trim())
       setResults(data.results)
       setRegime(data.regime?.regime)
     } catch (e) {
-      alert(e.message)
+      setError(e.message)
     }
     setLoading(false)
   }
@@ -59,6 +61,12 @@ export default function OptionsPage() {
           {loading ? 'Scanning...' : 'Scan Options'}
         </button>
       </div>
+
+      {error && (
+        <div className="rounded-lg p-4 mb-4 text-sm" style={{ backgroundColor: '#fef2f2', color: '#e5484d', border: '1px solid #fca5a5' }}>
+          {error}
+        </div>
+      )}
 
       {contracts.length > 0 && (
         <div className="overflow-x-auto">

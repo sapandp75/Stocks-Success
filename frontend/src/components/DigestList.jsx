@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { fetchWatchlistDigest, markDigestSeen } from '../api'
 
 const EVENT_META = {
   insider_buy: { label: 'Insider Buy', color: '#00a562' },
@@ -11,27 +12,24 @@ const EVENT_META = {
 export default function DigestList() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    fetch('/api/watchlist/digest')
-      .then(r => r.json())
+    fetchWatchlistDigest()
       .then(data => setEvents(data.events || []))
-      .catch(() => {})
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
 
   if (loading) return <div className="text-sm py-2" style={{ color: '#6b7280' }}>Checking for updates...</div>
+  if (error) return <div className="text-sm py-2" style={{ color: '#e5484d' }}>Failed to load digest: {error}</div>
   if (events.length === 0) return null
 
   const unseenCount = events.filter(e => !e.seen).length
 
-  const markSeen = () => {
+  const handleMarkSeen = () => {
     const ids = events.filter(e => !e.seen).map(e => e.id)
-    fetch('/api/research/digest/mark-seen', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event_ids: ids }),
-    }).then(() => {
+    markDigestSeen(ids).then(() => {
       setEvents(events.map(e => ({ ...e, seen: 1 })))
     })
   }
@@ -49,7 +47,7 @@ export default function DigestList() {
           )}
         </div>
         {unseenCount > 0 && (
-          <button onClick={markSeen} className="text-xs hover:underline" style={{ color: '#6b7280' }}>
+          <button onClick={handleMarkSeen} className="text-xs hover:underline" style={{ color: '#6b7280' }}>
             Mark all seen
           </button>
         )}

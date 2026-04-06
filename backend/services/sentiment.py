@@ -6,8 +6,7 @@ Inverts the signal: negative sentiment on quality = opportunity.
 import os
 import json
 import httpx
-from datetime import datetime
-from backend.database import get_db
+from backend.database import get_db, is_fresh
 from backend.config import RESEARCH_CONFIG, ENRICHMENT_CONFIG
 
 
@@ -15,20 +14,12 @@ AV_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 
 
-def _is_fresh(fetched_at: str, ttl_hours: int) -> bool:
-    if not fetched_at:
-        return False
-    fetched = datetime.fromisoformat(fetched_at)
-    return (datetime.now() - fetched).total_seconds() < ttl_hours * 3600
-
-
 def fetch_sentiment(ticker: str) -> dict:
     """Get combined sentiment for a ticker. Cached in SQLite."""
-    db = get_db()
-    cached = db.execute("SELECT * FROM sentiment_cache WHERE ticker = ?", (ticker,)).fetchone()
-    db.close()
+    with get_db() as db:
+        cached = db.execute("SELECT * FROM sentiment_cache WHERE ticker = ?", (ticker,)).fetchone()
 
-    if cached and _is_fresh(cached["fetched_at"], RESEARCH_CONFIG["sentiment_staleness_hours"]):
+    if cached and is_fresh(cached["fetched_at"], RESEARCH_CONFIG["sentiment_staleness_hours"]):
         return _format_sentiment(dict(cached))
 
     av_data = _fetch_alpha_vantage_sentiment(ticker)
@@ -46,21 +37,20 @@ def fetch_sentiment(ticker: str) -> dict:
         "finnhub_recent_change": fh_data.get("recent_change"),
     }
 
-    db = get_db()
-    db.execute("""
-        INSERT OR REPLACE INTO sentiment_cache
-        (ticker, av_sentiment_score, av_sentiment_label, av_article_count,
-         finnhub_consensus, finnhub_target_mean, finnhub_target_high, finnhub_target_low,
-         finnhub_recent_change, fetched_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    """, (
-        ticker, record["av_sentiment_score"], record["av_sentiment_label"],
-        record["av_article_count"], record["finnhub_consensus"],
-        record["finnhub_target_mean"], record["finnhub_target_high"],
-        record["finnhub_target_low"], record["finnhub_recent_change"],
-    ))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("""
+            INSERT OR REPLACE INTO sentiment_cache
+            (ticker, av_sentiment_score, av_sentiment_label, av_article_count,
+             finnhub_consensus, finnhub_target_mean, finnhub_target_high, finnhub_target_low,
+             finnhub_recent_change, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        """, (
+            ticker, record["av_sentiment_score"], record["av_sentiment_label"],
+            record["av_article_count"], record["finnhub_consensus"],
+            record["finnhub_target_mean"], record["finnhub_target_high"],
+            record["finnhub_target_low"], record["finnhub_recent_change"],
+        ))
+        db.commit()
 
     return _format_sentiment(record)
 
@@ -202,11 +192,10 @@ def get_analyst_data(ticker: str) -> dict:
     """Full analyst data with contrarian interpretation. Cached 6hr."""
     ttl = ENRICHMENT_CONFIG["analyst_ttl_hours"]
 
-    db = get_db()
-    cached = db.execute("SELECT * FROM analyst_cache WHERE ticker = ?", (ticker,)).fetchone()
-    db.close()
+    with get_db() as db:
+        cached = db.execute("SELECT * FROM analyst_cache WHERE ticker = ?", (ticker,)).fetchone()
 
-    if cached and _is_fresh(cached["fetched_at"], ttl):
+    if cached and is_fresh(cached["fetched_at"], ttl):
         data = json.loads(cached["data_json"]) if cached["data_json"] else {}
         return _build_analyst_data(data)
 
@@ -254,15 +243,14 @@ def get_analyst_data(ticker: str) -> dict:
 
     # Cache
     data_json = json.dumps(data)
-    db = get_db()
-    db.execute(
-        """INSERT OR REPLACE INTO analyst_cache
-           (ticker, consensus, target_mean, target_low, target_high, num_analysts, data_json, fetched_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
-        (ticker, consensus, target_mean, target_low, target_high, num_analysts, data_json),
-    )
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute(
+            """INSERT OR REPLACE INTO analyst_cache
+               (ticker, consensus, target_mean, target_low, target_high, num_analysts, data_json, fetched_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            (ticker, consensus, target_mean, target_low, target_high, num_analysts, data_json),
+        )
+        db.commit()
 
     return _build_analyst_data(data)
 

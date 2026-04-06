@@ -1,5 +1,6 @@
 import json
-from fastapi import APIRouter, Body
+import logging
+from fastapi import APIRouter
 from backend.services.market_data import (
     get_stock_fundamentals, get_fcf_3yr_average, get_sbc, get_net_debt,
 )
@@ -7,6 +8,9 @@ from backend.services.dcf_calculator import (
     calculate_dcf, reverse_dcf, build_sensitivity_matrix, adjust_fcf_for_sbc,
 )
 from backend.database import get_db
+from backend.validators import validate_ticker, DeepDivePayload
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/deep-dive", tags=["deep-dive"])
 
@@ -14,7 +18,7 @@ router = APIRouter(prefix="/api/deep-dive", tags=["deep-dive"])
 @router.get("/{ticker}")
 def get_deep_dive_data(ticker: str):
     """Get all quantitative data for a deep dive + any saved AI analysis."""
-    ticker = ticker.upper()
+    ticker = validate_ticker(ticker)
     fundamentals_result = get_stock_fundamentals(ticker)
     fundamentals = fundamentals_result.value
 
@@ -53,12 +57,11 @@ def get_deep_dive_data(ticker: str):
         )
 
     # Load saved AI analysis
-    db = get_db()
-    row = db.execute(
-        "SELECT * FROM deep_dives WHERE ticker = ? ORDER BY dive_date DESC LIMIT 1",
-        (ticker,)
-    ).fetchone()
-    db.close()
+    with get_db() as db:
+        row = db.execute(
+            "SELECT * FROM deep_dives WHERE ticker = ? ORDER BY dive_date DESC LIMIT 1",
+            (ticker,)
+        ).fetchone()
 
     ai_analysis = None
     if row:
@@ -84,42 +87,42 @@ def get_deep_dive_data(ticker: str):
         from backend.services.technicals import get_full_technicals
         technicals = get_full_technicals(ticker)
     except Exception:
-        pass
+        logger.warning("Failed to fetch technicals for %s", ticker, exc_info=True)
 
     financial_history = None
     try:
         from backend.services.financial_history import get_financial_history
         financial_history = get_financial_history(ticker)
     except Exception:
-        pass
+        logger.warning("Failed to fetch financial history for %s", ticker, exc_info=True)
 
     insider_activity = None
     try:
         from backend.services.institutional import get_insider_activity
         insider_activity = get_insider_activity(ticker)
     except Exception:
-        pass
+        logger.warning("Failed to fetch insider activity for %s", ticker, exc_info=True)
 
     institutional = None
     try:
         from backend.services.institutional import get_institutional_summary
         institutional = get_institutional_summary(ticker)
     except Exception:
-        pass
+        logger.warning("Failed to fetch institutional data for %s", ticker, exc_info=True)
 
     analyst = None
     try:
         from backend.services.sentiment import get_analyst_data
         analyst = get_analyst_data(ticker)
     except Exception:
-        pass
+        logger.warning("Failed to fetch analyst data for %s", ticker, exc_info=True)
 
     peers = None
     try:
         from backend.services.peers import get_peer_comparison
         peers = get_peer_comparison(ticker)
     except Exception:
-        pass
+        logger.warning("Failed to fetch peer comparison for %s", ticker, exc_info=True)
 
     # Research context (collapsed by default in UI)
     research_context = None
@@ -139,7 +142,7 @@ def get_deep_dive_data(ticker: str):
             "transcript_title": t["title"] if t else None,
         }
     except Exception:
-        pass
+        logger.warning("Failed to fetch research context for %s", ticker, exc_info=True)
 
     return {
         "ticker": ticker,
@@ -168,40 +171,39 @@ def get_deep_dive_data(ticker: str):
 
 
 @router.post("/{ticker}")
-def save_deep_dive(ticker: str, data: dict = Body(...)):
+def save_deep_dive(ticker: str, data: DeepDivePayload):
     """Save AI-generated deep dive analysis. Called by bridge/deep_dive_worker.py."""
-    ticker = ticker.upper()
-    db = get_db()
-    db.execute("""
-        INSERT INTO deep_dives (
-            ticker, ai_first_impression, ai_bear_case_stock, ai_bear_case_business,
-            ai_bull_case_rebuttal, ai_bull_case_upside, ai_whole_picture,
-            ai_self_review, ai_verdict, ai_conviction,
-            ai_entry_grid_json, ai_exit_playbook
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        ticker,
-        data.get("first_impression"),
-        data.get("bear_case_stock"),
-        data.get("bear_case_business"),
-        data.get("bull_case_rebuttal"),
-        data.get("bull_case_upside"),
-        data.get("whole_picture"),
-        data.get("self_review"),
-        data.get("verdict"),
-        data.get("conviction"),
-        json.dumps(data.get("entry_grid")) if data.get("entry_grid") else None,
-        data.get("exit_playbook"),
-    ))
-    db.commit()
-    db.close()
+    ticker = validate_ticker(ticker)
+    with get_db() as db:
+        db.execute("""
+            INSERT INTO deep_dives (
+                ticker, ai_first_impression, ai_bear_case_stock, ai_bear_case_business,
+                ai_bull_case_rebuttal, ai_bull_case_upside, ai_whole_picture,
+                ai_self_review, ai_verdict, ai_conviction,
+                ai_entry_grid_json, ai_exit_playbook
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            ticker,
+            data.first_impression,
+            data.bear_case_stock,
+            data.bear_case_business,
+            data.bull_case_rebuttal,
+            data.bull_case_upside,
+            data.whole_picture,
+            data.self_review,
+            data.verdict,
+            data.conviction,
+            json.dumps(data.entry_grid) if data.entry_grid else None,
+            data.exit_playbook,
+        ))
+        db.commit()
     return {"status": "saved", "ticker": ticker}
 
 
 @router.post("/{ticker}/analyze")
 def analyze_deep_dive(ticker: str):
     """Trigger Gemini 2.5 Pro to generate all 8 deep dive sections."""
-    ticker = ticker.upper()
+    ticker = validate_ticker(ticker)
     context = {}
 
     # Gather all Tier 1 data (each in try/except so failures don't block)
@@ -209,56 +211,56 @@ def analyze_deep_dive(ticker: str):
         fund = get_stock_fundamentals(ticker)
         context["fundamentals"] = fund.value if hasattr(fund, 'value') else fund
     except Exception:
-        pass
+        logger.warning("Analyze %s: failed to get fundamentals", ticker, exc_info=True)
 
     try:
         from backend.services.technicals import get_full_technicals
         context["technicals"] = get_full_technicals(ticker)
     except Exception:
-        pass
+        logger.warning("Analyze %s: failed to get technicals", ticker, exc_info=True)
 
     try:
         from backend.services.financial_history import get_financial_history
         context["financial_history"] = get_financial_history(ticker)
     except Exception:
-        pass
+        logger.warning("Analyze %s: failed to get financial history", ticker, exc_info=True)
 
     try:
         from backend.services.institutional import get_insider_activity
         context["insider_activity"] = get_insider_activity(ticker)
     except Exception:
-        pass
+        logger.warning("Analyze %s: failed to get insider activity", ticker, exc_info=True)
 
     try:
         from backend.services.institutional import get_institutional_summary
         context["institutional"] = get_institutional_summary(ticker)
     except Exception:
-        pass
+        logger.warning("Analyze %s: failed to get institutional data", ticker, exc_info=True)
 
     try:
         from backend.services.sentiment import get_analyst_data
         context["analyst"] = get_analyst_data(ticker)
     except Exception:
-        pass
+        logger.warning("Analyze %s: failed to get analyst data", ticker, exc_info=True)
 
     try:
         from backend.services.sentiment import fetch_sentiment
         context["sentiment"] = fetch_sentiment(ticker)
     except Exception:
-        pass
+        logger.warning("Analyze %s: failed to get sentiment", ticker, exc_info=True)
 
     try:
         from backend.services.peers import get_peer_comparison
         context["peers"] = get_peer_comparison(ticker)
     except Exception:
-        pass
+        logger.warning("Analyze %s: failed to get peer comparison", ticker, exc_info=True)
 
     try:
         from backend.services.regime_checker import get_full_regime
         regime_data = get_full_regime()
         context["regime"] = regime_data.get("regime", {})
     except Exception:
-        pass
+        logger.warning("Analyze %s: failed to get regime", ticker, exc_info=True)
 
     from backend.services.gemini_analyzer import generate_deep_dive
     result = generate_deep_dive(ticker, context)
@@ -269,25 +271,24 @@ def analyze_deep_dive(ticker: str):
         raise HTTPException(status_code=status_code, detail=result["error"])
 
     # Save to deep_dives table
-    db = get_db()
-    db.execute("""INSERT INTO deep_dives (
-        ticker, ai_first_impression, ai_bear_case_stock, ai_bear_case_business,
-        ai_bull_case_rebuttal, ai_bull_case_upside, ai_whole_picture,
-        ai_self_review, ai_verdict, ai_conviction
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
-        ticker,
-        result.get("first_impression") or result.get("data_snapshot"),
-        result.get("bear_case"),
-        result.get("bear_case"),  # combined
-        result.get("bull_case"),
-        result.get("bull_case"),
-        result.get("whole_picture"),
-        result.get("self_review"),
-        result.get("verdict"),
-        None,
-    ))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("""INSERT INTO deep_dives (
+            ticker, ai_first_impression, ai_bear_case_stock, ai_bear_case_business,
+            ai_bull_case_rebuttal, ai_bull_case_upside, ai_whole_picture,
+            ai_self_review, ai_verdict, ai_conviction
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
+            ticker,
+            result.get("first_impression") or result.get("data_snapshot"),
+            result.get("bear_case_stock") or result.get("bear_case"),
+            result.get("bear_case_business") or result.get("bear_case"),
+            result.get("bull_case"),
+            result.get("bull_case"),
+            result.get("whole_picture"),
+            result.get("self_review"),
+            result.get("verdict"),
+            None,
+        ))
+        db.commit()
 
     return {
         "ticker": ticker,

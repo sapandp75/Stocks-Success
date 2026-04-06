@@ -4,7 +4,7 @@ export default function InsiderPanel({ data }) {
   const sentiment = data.net_sentiment || data.sentiment || 'QUIET'
   const sentimentColors = {
     BUYING: '#00a562',
-    SELLING: '#00a562',
+    SELLING: '#e5484d',
     MIXED: '#d97b0e',
     QUIET: '#6b7280',
   }

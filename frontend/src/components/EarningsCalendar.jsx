@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
+import { fetchEarningsCalendar } from '../api'
 
 export default function EarningsCalendar() {
   const [earnings, setEarnings] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    fetch('/api/regime/earnings-calendar')
-      .then(r => r.json())
+    fetchEarningsCalendar()
       .then(data => setEarnings(data.upcoming_earnings || []))
-      .catch(() => {})
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
 
+  if (error) return <div className="text-xs mt-2" style={{ color: '#e5484d' }}>Failed to load earnings calendar</div>
   if (loading || earnings.length === 0) return null
 
   const now = new Date()

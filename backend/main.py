@@ -3,8 +3,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from backend.logging_config import setup_logging
 from backend.database import init_db
 from backend.routers import regime, screener, options, deep_dive, watchlist, positions, research
+
+setup_logging()
 
 app = FastAPI(title="Contrarian Investing Platform")
 

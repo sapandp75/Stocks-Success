@@ -73,13 +73,15 @@ def main():
                 if val is not None:
                     print(f"  {key}: {val}")
         except Exception as e:
-            # Try NYSE if NASDAQ fails
+            # Try NYSE if NASDAQ fails — log original error
+            print(f"NASDAQ lookup failed ({e}), trying NYSE...", file=sys.stderr)
             try:
                 handler = TA_Handler(
                     symbol=ticker, screener="america", exchange="NYSE",
                     interval=Interval.INTERVAL_1_DAY,
                 )
                 analysis = handler.get_analysis()
+                print(f"[Exchange: NYSE]")
                 print(f"Summary: BUY={analysis.summary['BUY']} SELL={analysis.summary['SELL']} NEUTRAL={analysis.summary['NEUTRAL']}")
                 print(f"Recommendation: {analysis.summary['RECOMMENDATION']}")
                 indicators = analysis.indicators
@@ -90,7 +92,7 @@ def main():
                     if val is not None:
                         print(f"  {key}: {val}")
             except Exception as e2:
-                print(f"TradingView data unavailable: {e2}", file=sys.stderr)
+                print(f"TradingView data unavailable (NASDAQ: {e}, NYSE: {e2})", file=sys.stderr)
         # --tv can combine with --context
         if not args.context and not args.get and not args.post:
             return

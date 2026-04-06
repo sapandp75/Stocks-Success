@@ -3,6 +3,7 @@
 import os
 import re
 import time
+import threading
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,13 +15,14 @@ PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "deep_dive.tx
 
 
 class GeminiRateLimiter:
-    """Track RPM and RPD limits for Gemini API."""
+    """Track RPM and RPD limits for Gemini API. Thread-safe."""
 
     def __init__(self, max_rpm: int = None, max_rpd: int = None):
         self.max_rpm = max_rpm or GEMINI_CONFIG["max_rpm"]
         self.max_rpd = max_rpd or GEMINI_CONFIG["max_rpd"]
         self._minute_timestamps: deque = deque()
         self._day_timestamps: deque = deque()
+        self._lock = threading.Lock()
 
     def _prune(self):
         now = time.time()
@@ -29,27 +31,29 @@ class GeminiRateLimiter:
         while self._day_timestamps and now - self._day_timestamps[0] > 86400:
             self._day_timestamps.popleft()
 
-    def can_request(self) -> bool:
-        self._prune()
-        return (
-            len(self._minute_timestamps) < self.max_rpm
-            and len(self._day_timestamps) < self.max_rpd
-        )
-
-    def record_request(self):
-        now = time.time()
-        self._minute_timestamps.append(now)
-        self._day_timestamps.append(now)
+    def acquire(self) -> bool:
+        """Atomic check-and-record. Returns True if request is allowed."""
+        with self._lock:
+            self._prune()
+            if (len(self._minute_timestamps) < self.max_rpm
+                    and len(self._day_timestamps) < self.max_rpd):
+                now = time.time()
+                self._minute_timestamps.append(now)
+                self._day_timestamps.append(now)
+                return True
+            return False
 
     def seconds_until_available(self) -> int:
-        self._prune()
-        if self.can_request():
+        with self._lock:
+            self._prune()
+            if (len(self._minute_timestamps) < self.max_rpm
+                    and len(self._day_timestamps) < self.max_rpd):
+                return 0
+            if len(self._day_timestamps) >= self.max_rpd:
+                return int(86400 - (time.time() - self._day_timestamps[0])) + 1
+            if len(self._minute_timestamps) >= self.max_rpm:
+                return int(60 - (time.time() - self._minute_timestamps[0])) + 1
             return 0
-        if len(self._day_timestamps) >= self.max_rpd:
-            return int(86400 - (time.time() - self._day_timestamps[0])) + 1
-        if len(self._minute_timestamps) >= self.max_rpm:
-            return int(60 - (time.time() - self._minute_timestamps[0])) + 1
-        return 0
 
 
 # Module-level singleton
@@ -238,7 +242,7 @@ def generate_deep_dive(ticker: str, context: dict) -> dict:
     if not GEMINI_API_KEY:
         return {"error": "GEMINI_API_KEY is not set"}
 
-    if not _rate_limiter.can_request():
+    if not _rate_limiter.acquire():
         wait = _rate_limiter.seconds_until_available()
         return {"error": f"Rate limit exceeded. Try again in {wait} seconds"}
 
@@ -306,8 +310,6 @@ def generate_deep_dive(ticker: str, context: dict) -> dict:
                 temperature=GEMINI_CONFIG["temperature"],
             ),
         )
-
-        _rate_limiter.record_request()
 
         raw_text = response.text
         sections = _parse_sections(raw_text)

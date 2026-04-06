@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { RegimeProvider } from './RegimeContext'
 import Navbar from './components/Navbar'
 import RegimePage from './pages/RegimePage'
 import ScreenerPage from './pages/ScreenerPage'
@@ -10,6 +11,7 @@ import PositionsPage from './pages/PositionsPage'
 export default function App() {
   return (
     <BrowserRouter>
+      <RegimeProvider>
       <div className="min-h-screen" style={{ backgroundColor: '#f0f1f3', color: '#1a1a2e' }}>
         <Navbar />
         <Routes>
@@ -22,6 +24,7 @@ export default function App() {
           <Route path="/positions" element={<PositionsPage />} />
         </Routes>
       </div>
+      </RegimeProvider>
     </BrowserRouter>
   )
 }

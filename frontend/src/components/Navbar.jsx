@@ -1,6 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import { getRegime } from '../api'
+import { useRegime } from '../RegimeContext'
 import RegimeBadge from './RegimeBadge'
 
 const links = [
@@ -13,11 +12,8 @@ const links = [
 ]
 
 export default function Navbar() {
-  const [regime, setRegime] = useState(null)
-
-  useEffect(() => {
-    getRegime().then(d => setRegime(d.regime)).catch(() => {})
-  }, [])
+  const { data } = useRegime()
+  const regime = data?.regime
 
   return (
     <nav className="bg-white border-b px-6 py-3 flex gap-6 items-center" style={{ borderColor: '#e2e4e8' }}>

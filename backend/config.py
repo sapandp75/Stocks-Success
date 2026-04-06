@@ -11,7 +11,9 @@ FMP_API_KEY = os.getenv("FMP_API_KEY", "")
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 
-USD_GBP_RATE = 0.80
+# FX rate fetched dynamically via backend/services/fx.py
+# Keep as fallback reference for imports that haven't migrated yet
+USD_GBP_RATE = 0.80  # Fallback — prefer get_usd_gbp_rate()
 
 # B1 hard gates — missing data = FAIL (fail-closed)
 B1_GATES = {
