@@ -87,6 +87,16 @@ ENRICHMENT_CONFIG = {
     "institutional_ttl_hours": 6,
     "analyst_ttl_hours": 6,
     "peer_ttl_hours": 6,
+    "quarterly_ttl_hours": 6,
+    "growth_metrics_ttl_hours": 6,
+    "forward_estimates_ttl_hours": 6,
+    "external_targets_ttl_hours": 6,
+    "fund_flow_ttl_hours": 24,
+}
+
+DEEP_DIVE_GATES = {
+    "min_market_cap": 2_000_000_000,  # $2B
+    "min_avg_volume": 500_000,         # 500K shares/day
 }
 
 # Gemini 2.5 Pro config

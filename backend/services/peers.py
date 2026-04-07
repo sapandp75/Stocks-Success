@@ -90,26 +90,36 @@ def get_peer_comparison(ticker: str) -> dict:
     except Exception:
         sp500 = []
 
-    # Filter by sector using industry_key from the SP500 list
-    # Check candidates in random-shuffled order to get sector diversity
-    import random
+    # Filter by sector — sort by market cap proximity for relevant peers
     candidates = [t for t in sp500 if t != ticker]
-    random.shuffle(candidates)
+
+    # Get target market cap for proximity sorting
+    target_mcap = target_info.get("marketCap", 0) or 0
 
     peer_tickers = []
-    checked = 0
-    for t in candidates:
-        if len(peer_tickers) >= 8:
-            break
-        if checked >= 60:
-            break
+    sector_matches = []
+
+    # First pass: find all sector matches (check up to 100 tickers, deterministic sample)
+    import random
+    if len(candidates) > 100:
+        sample = random.Random(hash(ticker)).sample(candidates, 100)
+    else:
+        sample = candidates
+
+    for t in sample:
         try:
             info = yf.Ticker(t).info
             if info.get("sector") == target_sector:
-                peer_tickers.append(t)
+                sector_matches.append({
+                    "ticker": t,
+                    "mcap": info.get("marketCap", 0) or 0,
+                })
         except Exception:
             pass
-        checked += 1
+
+    # Sort by market cap proximity to target, take top 8
+    sector_matches.sort(key=lambda x: abs(x["mcap"] - target_mcap))
+    peer_tickers = [m["ticker"] for m in sector_matches[:8]]
 
     # Fetch fundamentals for target + peers
     all_tickers = [ticker] + peer_tickers

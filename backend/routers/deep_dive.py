@@ -22,7 +22,19 @@ def get_deep_dive_data(ticker: str):
     fundamentals_result = get_stock_fundamentals(ticker)
     fundamentals = fundamentals_result.value
 
-    # FCF: 3-year average, SBC-adjusted per spec
+    # --- GATES CHECK ---
+    from backend.config import DEEP_DIVE_GATES
+    gates = {
+        "market_cap": fundamentals.get("market_cap"),
+        "avg_volume": fundamentals.get("avg_volume"),
+        "min_market_cap": DEEP_DIVE_GATES["min_market_cap"],
+        "min_avg_volume": DEEP_DIVE_GATES["min_avg_volume"],
+        "passes_market_cap": (fundamentals.get("market_cap") or 0) >= DEEP_DIVE_GATES["min_market_cap"],
+        "passes_volume": (fundamentals.get("avg_volume") or 0) >= DEEP_DIVE_GATES["min_avg_volume"],
+    }
+    gates["passes_all"] = gates["passes_market_cap"] and gates["passes_volume"]
+
+    # --- FCF + DCF (existing) ---
     fcf_3yr = get_fcf_3yr_average(ticker)
     sbc = get_sbc(ticker)
     revenue = fundamentals.get("total_revenue")
@@ -34,7 +46,6 @@ def get_deep_dive_data(ticker: str):
     if starting_fcf and sbc:
         starting_fcf = adjust_fcf_for_sbc(starting_fcf, sbc, revenue)
 
-    # Reverse DCF (always first per spec)
     reverse_dcf_result = None
     if starting_fcf and shares and price and starting_fcf > 0:
         reverse_dcf_result = reverse_dcf(
@@ -42,7 +53,6 @@ def get_deep_dive_data(ticker: str):
             shares_outstanding=shares, net_debt=net_debt or 0,
         )
 
-    # Forward DCF (3 scenarios)
     forward_dcf = None
     sensitivity = None
     if starting_fcf and shares and starting_fcf > 0:
@@ -56,7 +66,7 @@ def get_deep_dive_data(ticker: str):
             shares_outstanding=shares, net_debt=net_debt or 0,
         )
 
-    # Load saved AI analysis
+    # --- SAVED AI ANALYSIS ---
     with get_db() as db:
         row = db.execute(
             "SELECT * FROM deep_dives WHERE ticker = ? ORDER BY dive_date DESC LIMIT 1",
@@ -78,10 +88,10 @@ def get_deep_dive_data(ticker: str):
             "conviction": row["ai_conviction"],
             "entry_grid": json.loads(row["ai_entry_grid_json"]) if row["ai_entry_grid_json"] else None,
             "exit_playbook": row["ai_exit_playbook"],
+            "next_review_date": row["ai_next_review_date"] if "ai_next_review_date" in row.keys() else None,
         }
 
-    # Enrichment: technicals, financial history, insider, institutional, analyst, peers
-    # Each in try/except — enrichment never blocks the critical path
+    # --- ENRICHMENTS (each in try/except — never blocks) ---
     technicals = None
     try:
         from backend.services.technicals import get_full_technicals
@@ -124,13 +134,18 @@ def get_deep_dive_data(ticker: str):
     except Exception:
         logger.warning("Failed to fetch peer comparison for %s", ticker, exc_info=True)
 
-    # Research context (collapsed by default in UI)
+    edgar_data = None
+    try:
+        from backend.services.edgar import get_edgar_context
+        edgar_data = get_edgar_context(ticker)
+    except Exception:
+        logger.warning("Failed to fetch SEC EDGAR data for %s", ticker, exc_info=True)
+
     research_context = None
     try:
         from backend.services.research import get_all_research
         from backend.services.sentiment import fetch_sentiment
         from backend.services.transcripts import fetch_latest_transcript
-
         r = get_all_research(ticker)
         s = fetch_sentiment(ticker)
         t = fetch_latest_transcript(ticker)
@@ -144,8 +159,74 @@ def get_deep_dive_data(ticker: str):
     except Exception:
         logger.warning("Failed to fetch research context for %s", ticker, exc_info=True)
 
+    # --- NEW: Quarterly Data ---
+    quarterly = None
+    try:
+        from backend.services.quarterly_data import get_quarterly_data
+        quarterly = get_quarterly_data(ticker)
+    except Exception:
+        logger.warning("Failed to fetch quarterly data for %s", ticker, exc_info=True)
+
+    # --- NEW: Growth Metrics ---
+    growth_metrics = None
+    try:
+        from backend.services.growth_metrics import get_growth_metrics
+        growth_metrics = get_growth_metrics(ticker)
+        # Compute implied vs historical gap
+        if growth_metrics and reverse_dcf_result and growth_metrics.get("revenue_cagr_3yr"):
+            implied = reverse_dcf_result["implied_growth_rate"]
+            historical = growth_metrics["revenue_cagr_3yr"]
+            growth_metrics["implied_vs_historical_gap"] = round(implied - historical, 4)
+    except Exception:
+        logger.warning("Failed to fetch growth metrics for %s", ticker, exc_info=True)
+
+    # --- NEW: Forward Estimates ---
+    forward_estimates = None
+    try:
+        from backend.services.forward_estimates import get_forward_estimates
+        forward_estimates = get_forward_estimates(ticker)
+    except Exception:
+        logger.warning("Failed to fetch forward estimates for %s", ticker, exc_info=True)
+
+    # --- NEW: External Targets ---
+    external_targets = None
+    try:
+        from backend.services.external_targets import get_external_targets, build_target_comparison
+        raw_targets = get_external_targets(ticker)
+        dcf_prices = {}
+        if forward_dcf:
+            dcf_prices = {
+                "bear": forward_dcf["bear"]["intrinsic_value_per_share"],
+                "base": forward_dcf["base"]["intrinsic_value_per_share"],
+                "bull": forward_dcf["bull"]["intrinsic_value_per_share"],
+            }
+        external_targets = build_target_comparison(
+            raw_targets.get("sources", {}), dcf_prices, price or 0,
+        )
+    except Exception:
+        logger.warning("Failed to fetch external targets for %s", ticker, exc_info=True)
+
+    # --- NEW: 13F Fund Flow ---
+    fund_flow = None
+    try:
+        from backend.services.fund_flow import get_fund_flow
+        fund_flow = get_fund_flow(ticker)
+    except Exception:
+        logger.warning("Failed to fetch fund flow for %s", ticker, exc_info=True)
+
+    # --- Staleness ---
+    staleness_days = None
+    if ai_analysis and ai_analysis.get("dive_date"):
+        from datetime import datetime
+        try:
+            dive_dt = datetime.fromisoformat(ai_analysis["dive_date"])
+            staleness_days = (datetime.now() - dive_dt).days
+        except Exception:
+            pass
+
     return {
         "ticker": ticker,
+        "gates": gates,
         "fundamentals": fundamentals,
         "data_quality": {
             "source": fundamentals_result.source,
@@ -166,7 +247,15 @@ def get_deep_dive_data(ticker: str):
         "analyst": analyst,
         "peers": peers,
         "ai_analysis": ai_analysis,
+        "edgar": edgar_data,
         "research_context": research_context,
+        # NEW sections
+        "quarterly": quarterly,
+        "growth_metrics": growth_metrics,
+        "forward_estimates": forward_estimates,
+        "external_targets": external_targets,
+        "fund_flow": fund_flow,
+        "staleness_days": staleness_days,
     }
 
 
@@ -180,8 +269,8 @@ def save_deep_dive(ticker: str, data: DeepDivePayload):
                 ticker, ai_first_impression, ai_bear_case_stock, ai_bear_case_business,
                 ai_bull_case_rebuttal, ai_bull_case_upside, ai_whole_picture,
                 ai_self_review, ai_verdict, ai_conviction,
-                ai_entry_grid_json, ai_exit_playbook
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ai_entry_grid_json, ai_exit_playbook, ai_next_review_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             ticker,
             data.first_impression,
@@ -195,6 +284,7 @@ def save_deep_dive(ticker: str, data: DeepDivePayload):
             data.conviction,
             json.dumps(data.entry_grid) if data.entry_grid else None,
             data.exit_playbook,
+            data.next_review_date,
         ))
         db.commit()
     return {"status": "saved", "ticker": ticker}
@@ -262,6 +352,12 @@ def analyze_deep_dive(ticker: str):
     except Exception:
         logger.warning("Analyze %s: failed to get regime", ticker, exc_info=True)
 
+    try:
+        from backend.services.edgar import get_edgar_context
+        context["edgar"] = get_edgar_context(ticker)
+    except Exception:
+        logger.warning("Analyze %s: failed to get SEC EDGAR data", ticker, exc_info=True)
+
     from backend.services.gemini_analyzer import generate_deep_dive
     result = generate_deep_dive(ticker, context)
 
@@ -270,23 +366,104 @@ def analyze_deep_dive(ticker: str):
         status_code = 429 if "Rate limit" in result["error"] else 500
         raise HTTPException(status_code=status_code, detail=result["error"])
 
+    # Split bear case into stock/business if Gemini returned a combined section
+    bear_raw = result.get("bear_case", "")
+    bear_stock = result.get("bear_case_stock", "")
+    bear_business = result.get("bear_case_business", "")
+    if bear_raw and not bear_stock and not bear_business:
+        # Try to split on sub-headings
+        import re as _re
+        stock_match = _re.split(r"\*\*(?:Stock Risk|Price Risk)\*\*", bear_raw, maxsplit=1)
+        biz_match = _re.split(r"\*\*(?:Business Risk|Fundamental Risk)\*\*", bear_raw, maxsplit=1)
+        if len(stock_match) > 1 and len(biz_match) > 1:
+            bear_stock = biz_match[0].strip() if len(stock_match) > 1 else bear_raw
+            bear_business = biz_match[1].strip() if len(biz_match) > 1 else ""
+        else:
+            # Can't split — use full text for stock, leave business empty
+            bear_stock = bear_raw
+            bear_business = ""
+
+    # Split bull case similarly
+    bull_raw = result.get("bull_case", "")
+    bull_rebuttal = result.get("bull_case_rebuttal", "")
+    bull_upside = result.get("bull_case_upside", "")
+    if bull_raw and not bull_rebuttal and not bull_upside:
+        rebuttal_match = _re.split(r"\*\*(?:Rebuttal)\*\*", bull_raw, maxsplit=1)
+        upside_match = _re.split(r"\*\*(?:Upside)\*\*", bull_raw, maxsplit=1)
+        if len(upside_match) > 1:
+            bull_rebuttal = upside_match[0].strip()
+            bull_upside = upside_match[1].strip()
+        else:
+            bull_rebuttal = bull_raw
+            bull_upside = ""
+
+    # Extract next review date from verdict section
+    next_review = None
+    verdict_text = result.get("verdict", "")
+    if verdict_text:
+        review_match = _re.search(r"\*\*Next Review Date\*\*[:\s]*(.+?)(?:\n|$)", verdict_text)
+        if review_match:
+            next_review = review_match.group(1).strip()
+
+    # Extract conviction from verdict section
+    conviction = None
+    if verdict_text:
+        conviction_match = _re.search(
+            r"(?:conviction|confidence)[:\s]*\*?\*?(HIGH|MODERATE|MEDIUM|LOW)\*?\*?",
+            verdict_text, _re.IGNORECASE,
+        )
+        if conviction_match:
+            raw = conviction_match.group(1).upper()
+            conviction = "MODERATE" if raw == "MEDIUM" else raw
+
+    # Extract entry grid from verdict section
+    entry_grid = None
+    if verdict_text:
+        grid_rows = _re.findall(
+            r"\|\s*T(\d)\s*(?:\([^)]*\))?\s*\|\s*\$?([\d,.]+)\s*\|\s*([\d]+%?)\s*\|\s*(.+?)\s*\|",
+            verdict_text,
+        )
+        if grid_rows:
+            entry_grid = []
+            for tranche, price, pct, trigger in grid_rows:
+                entry_grid.append({
+                    "tranche": int(tranche),
+                    "price": float(price.replace(",", "")),
+                    "pct_of_position": pct.strip(),
+                    "trigger": trigger.strip(),
+                })
+
+    # Extract exit playbook
+    exit_playbook = None
+    if verdict_text:
+        exit_match = _re.search(
+            r"\*\*Exit Playbook\*\*[:\s]*([\s\S]+?)(?:\*\*Next Review|$)",
+            verdict_text,
+        )
+        if exit_match:
+            exit_playbook = exit_match.group(1).strip()
+
     # Save to deep_dives table
     with get_db() as db:
         db.execute("""INSERT INTO deep_dives (
             ticker, ai_first_impression, ai_bear_case_stock, ai_bear_case_business,
             ai_bull_case_rebuttal, ai_bull_case_upside, ai_whole_picture,
-            ai_self_review, ai_verdict, ai_conviction
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
+            ai_self_review, ai_verdict, ai_conviction, ai_entry_grid_json,
+            ai_exit_playbook, ai_next_review_date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
             ticker,
             result.get("first_impression") or result.get("data_snapshot"),
-            result.get("bear_case_stock") or result.get("bear_case"),
-            result.get("bear_case_business") or result.get("bear_case"),
-            result.get("bull_case"),
-            result.get("bull_case"),
+            bear_stock,
+            bear_business,
+            bull_rebuttal,
+            bull_upside,
             result.get("whole_picture"),
             result.get("self_review"),
-            result.get("verdict"),
-            None,
+            verdict_text,
+            conviction,
+            json.dumps(entry_grid) if entry_grid else None,
+            exit_playbook,
+            next_review,
         ))
         db.commit()
 
