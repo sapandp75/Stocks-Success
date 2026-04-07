@@ -52,3 +52,45 @@ def test_get_ndx100_tickers_uses_fallback_on_failure(monkeypatch, tmp_path):
 
     tickers = ndx100.get_ndx100_tickers()
     assert tickers == ["GOOG", "META"]
+
+
+from backend.services import regime_checker
+
+
+def _reset_regime_caches():
+    regime_checker._ndx_breadth_cache = None
+    regime_checker._ndx_breadth_cache_time = 0
+
+
+def test_calculate_ndx100_breadth_returns_structured_payload(monkeypatch):
+    _reset_regime_caches()
+
+    tickers = ["AAA", "BBB", "CCC"]
+    index = pd.date_range("2025-01-01", periods=220, freq="D")
+    close = pd.DataFrame(
+        {
+            "AAA": list(range(1, 221)),
+            "BBB": list(range(220, 0, -1)),
+            "CCC": [100] * 220,
+        },
+        index=index,
+    )
+    frame = pd.concat({"Close": close}, axis=1)
+
+    monkeypatch.setattr("backend.services.ndx100.get_ndx100_tickers", lambda: tickers)
+    monkeypatch.setattr(regime_checker.yf, "download", lambda *args, **kwargs: frame)
+
+    breadth = regime_checker.calculate_ndx100_breadth()
+    assert breadth["method"] == "full_universe"
+    assert breadth["confidence"] == "HIGH"
+    assert breadth["sample_size"] == 3
+    assert breadth["pct_above_200d"] == 33.3
+
+
+def test_calculate_ndx100_breadth_returns_unavailable_on_failure(monkeypatch):
+    _reset_regime_caches()
+
+    monkeypatch.setattr("backend.services.ndx100.get_ndx100_tickers", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    breadth = regime_checker.calculate_ndx100_breadth()
+    assert breadth["method"] == "unavailable"
