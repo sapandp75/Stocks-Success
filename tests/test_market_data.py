@@ -38,3 +38,15 @@ def test_required_b1_fields_defined():
     assert "forward_pe" in REQUIRED_B1_FIELDS
     assert "revenue_growth" in REQUIRED_B1_FIELDS
     assert "debt_to_equity" in REQUIRED_B1_FIELDS
+
+
+def test_fundamentals_includes_expanded_fields():
+    """New fields required for Deep Dive V2 are present in ALL_FUNDAMENTAL_FIELDS."""
+    from backend.services.market_data import ALL_FUNDAMENTAL_FIELDS
+    required_new = [
+        "peg_ratio", "forward_eps", "trailing_eps", "avg_volume",
+        "enterprise_value", "ebitda", "short_ratio",
+        "ex_dividend_date", "business_summary",
+    ]
+    for field in required_new:
+        assert field in ALL_FUNDAMENTAL_FIELDS, f"Missing field: {field}"

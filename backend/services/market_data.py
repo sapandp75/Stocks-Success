@@ -13,11 +13,13 @@ REQUIRED_B2_FIELDS = [
 ]
 
 ALL_FUNDAMENTAL_FIELDS = [
-    "price", "market_cap", "forward_pe", "trailing_pe",
+    "price", "market_cap", "forward_pe", "trailing_pe", "peg_ratio",
     "revenue_growth", "operating_margin", "gross_margin", "profit_margin",
     "free_cash_flow", "total_revenue", "debt_to_equity", "return_on_equity",
-    "short_percent", "shares_outstanding", "beta", "dividend_yield",
+    "short_percent", "short_ratio", "shares_outstanding", "beta", "dividend_yield",
     "high_52w", "low_52w", "drop_from_high", "earnings_date",
+    "forward_eps", "trailing_eps", "avg_volume", "enterprise_value", "ebitda",
+    "ex_dividend_date", "business_summary",
 ]
 
 
@@ -60,6 +62,7 @@ def get_stock_fundamentals(ticker: str) -> DataResult:
         "debt_to_equity": de_ratio,
         "return_on_equity": info.get("returnOnEquity"),
         "short_percent": info.get("shortPercentOfFloat"),
+        "short_ratio": info.get("shortRatio"),
         "high_52w": high_52w,
         "low_52w": info.get("fiftyTwoWeekLow"),
         "drop_from_high": round(drop, 4) if drop is not None else None,
@@ -67,6 +70,14 @@ def get_stock_fundamentals(ticker: str) -> DataResult:
         "beta": info.get("beta"),
         "dividend_yield": info.get("dividendYield"),
         "earnings_date": earnings_date,
+        "peg_ratio": info.get("pegRatio"),
+        "forward_eps": info.get("forwardEps"),
+        "trailing_eps": info.get("trailingEps"),
+        "avg_volume": info.get("averageVolume"),
+        "enterprise_value": info.get("enterpriseValue"),
+        "ebitda": info.get("ebitda"),
+        "ex_dividend_date": str(info.get("exDividendDate", "")) if info.get("exDividendDate") else None,
+        "business_summary": (info.get("longBusinessSummary") or "")[:500],
     }
 
     missing = [f for f in ALL_FUNDAMENTAL_FIELDS if data.get(f) is None]
