@@ -13,13 +13,16 @@ _CACHE_TTL = 86400  # 24 hours
 
 
 def _fetch_from_wikipedia() -> list[str]:
-    url = "https://en.wikipedia.org/wiki/List_of_Nasdaq-100_companies"
+    url = "https://en.wikipedia.org/wiki/Nasdaq-100"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req) as resp:
         html = resp.read().decode("utf-8")
     tables = pd.read_html(StringIO(html))
-    df = tables[0]
-    return sorted(df["Ticker"].str.replace(".", "-", regex=False).tolist())
+    # Find the table with a "Ticker" column
+    for df in tables:
+        if "Ticker" in df.columns:
+            return sorted(df["Ticker"].str.replace(".", "-", regex=False).tolist())
+    raise ValueError("No table with 'Ticker' column found on Nasdaq-100 Wikipedia page")
 
 
 def get_ndx100_tickers(use_cache: bool = True) -> list[str]:
