@@ -170,3 +170,81 @@ def test_stockcharts_returns_stale_on_failure(monkeypatch):
     assert "error" in result
     assert result["stale"] is not None
     assert result["stale"]["mcclellan"]["nymo"]["value"] == 10
+
+
+from backend.services.breadth import calculate_breadth_score, get_combined_breadth
+
+
+def test_breadth_score_all_bullish():
+    sc = {
+        "mcclellan": {
+            "nymo": {"value": 30, "change": 5, "signal": "BULLISH"},
+            "nysi": {"value": 100, "change": 10, "signal": "BULLISH"},
+        },
+        "advance_decline": {
+            "nyhl": {"value": 80, "change": 5, "signal": "HEALTHY"},
+        },
+        "sentiment": {
+            "cpc": {"value": 0.5, "change": -0.1, "signal": "COMPLACENT"},
+        },
+        "bullish_pct": {
+            "spx": 60.0,
+        },
+    }
+    spx = {"pct_above_200d": 70.0}
+
+    score, verdict = calculate_breadth_score(sc, spx)
+    assert score == 10.0
+    assert verdict == "RISK-ON"
+
+
+def test_breadth_score_all_bearish():
+    sc = {
+        "mcclellan": {
+            "nymo": {"value": -30, "change": -5, "signal": "BEARISH"},
+            "nysi": {"value": -600, "change": -10, "signal": "DEEPLY_BEARISH"},
+        },
+        "advance_decline": {
+            "nyhl": {"value": -80, "change": -5, "signal": "POOR"},
+        },
+        "sentiment": {
+            "cpc": {"value": 1.3, "change": 0.1, "signal": "EXTREME_FEAR"},
+        },
+        "bullish_pct": {
+            "spx": 20.0,
+        },
+    }
+    spx = {"pct_above_200d": 30.0}
+
+    score, verdict = calculate_breadth_score(sc, spx)
+    assert score == 0.0
+    assert verdict == "RISK-OFF"
+
+
+def test_breadth_score_mixed():
+    sc = {
+        "mcclellan": {
+            "nymo": {"value": 0, "change": 0, "signal": "NEUTRAL"},
+            "nysi": {"value": -200, "change": 5, "signal": "RECOVERING"},
+        },
+        "advance_decline": {
+            "nyhl": {"value": 0, "change": 0, "signal": "MARGINAL"},
+        },
+        "sentiment": {
+            "cpc": {"value": 0.9, "change": 0, "signal": "NEUTRAL"},
+        },
+        "bullish_pct": {
+            "spx": 45.0,
+        },
+    }
+    spx = {"pct_above_200d": 50.0}
+
+    score, verdict = calculate_breadth_score(sc, spx)
+    assert score == 5.0
+    assert verdict == "CAUTION"
+
+
+def test_breadth_score_all_unavailable():
+    score, verdict = calculate_breadth_score({}, {})
+    assert score == 0.0
+    assert verdict == "RISK-OFF"
