@@ -1,3 +1,4 @@
+import gzip
 import json
 import time
 import urllib.request
@@ -98,54 +99,100 @@ def _signal_bp(value: float) -> str:
     return "BEARISH"
 
 
+def _parse_float(s: str) -> float | None:
+    """Parse a string value to float, handling edge cases like '>5000'."""
+    if s is None:
+        return None
+    s = s.strip().lstrip(">").lstrip("<")
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def _collect_symbols(data: dict) -> dict:
+    """Flatten the section-based j-sum response into a symbol lookup.
+
+    The actual API returns: {"Market Breadth": {"$NYMO": {"close": "31.62", ...}}, ...}
+    Tests may pass the old flat format: {"sym": [{"s": "$NYMO", "c": 31.62, ...}]}
+    """
+    # Support test format (flat sym array)
+    if "sym" in data:
+        return {item["s"]: item for item in data["sym"]}
+
+    # Real API format: sections containing symbol dicts with string values
+    symbols = {}
+    for section_name, section_data in data.items():
+        if not isinstance(section_data, dict):
+            continue
+        for sym, item in section_data.items():
+            if not isinstance(item, dict) or "close" not in item:
+                continue
+            symbols[sym] = item
+    return symbols
+
+
+def _get_value(symbols: dict, sym: str) -> tuple[float | None, float | None, str | None]:
+    """Extract (value, change, name) from a symbol entry, handling both formats."""
+    item = symbols.get(sym)
+    if item is None:
+        return None, None, None
+
+    # Real format: {"close": "31.62", "chg": "+11.77", "name": "..."}
+    if "close" in item:
+        return _parse_float(item["close"]), _parse_float(item.get("chg", "0")), item.get("name")
+    # Test format: {"c": 31.62, "ch": 11.77, "n": "..."}
+    return item.get("c"), item.get("ch", 0), item.get("n")
+
+
 def _parse_response(data: dict) -> dict:
-    symbols = {item["s"]: item for item in data.get("sym", [])}
+    symbols = _collect_symbols(data)
 
     mcclellan = {}
     for sym, key in _MCCLELLAN_KEYS.items():
-        item = symbols.get(sym)
-        if item:
+        value, change, _ = _get_value(symbols, sym)
+        if value is not None:
             mcclellan[key] = {
-                "value": item["c"],
-                "change": item["ch"],
-                "signal": _signal_mcclellan(sym, item["c"]),
+                "value": value,
+                "change": change or 0,
+                "signal": _signal_mcclellan(sym, value),
             }
 
     advance_decline = {}
     for sym, key in _AD_KEYS.items():
-        item = symbols.get(sym)
-        if item:
+        value, change, _ = _get_value(symbols, sym)
+        if value is not None:
             advance_decline[key] = {
-                "value": item["c"],
-                "change": item["ch"],
-                "signal": _signal_ad(sym, item["c"]),
+                "value": value,
+                "change": change or 0,
+                "signal": _signal_ad(sym, value),
             }
 
     sentiment = {}
     for sym, key in _SENTIMENT_KEYS.items():
-        item = symbols.get(sym)
-        if item:
+        value, change, _ = _get_value(symbols, sym)
+        if value is not None:
             sentiment[key] = {
-                "value": item["c"],
-                "change": item["ch"],
-                "signal": _signal_sentiment(sym, item["c"]),
+                "value": value,
+                "change": change or 0,
+                "signal": _signal_sentiment(sym, value),
             }
 
     bullish_pct = {}
     for sym, key in _BP_INDEX_KEYS.items():
-        item = symbols.get(sym)
-        if item:
-            bullish_pct[key] = item["c"]
+        value, _, _ = _get_value(symbols, sym)
+        if value is not None:
+            bullish_pct[key] = value
 
     sectors = []
     for sym in sorted(_BP_SECTOR_SYMBOLS):
-        item = symbols.get(sym)
-        if item:
+        value, _, name = _get_value(symbols, sym)
+        if value is not None:
             sectors.append({
                 "symbol": sym,
-                "name": item["n"],
-                "value": item["c"],
-                "signal": _signal_bp(item["c"]),
+                "name": name or sym,
+                "value": value,
+                "signal": _signal_bp(value),
             })
     bullish_pct["sectors"] = sectors
 
@@ -178,9 +225,13 @@ def get_stockcharts_breadth() -> dict:
         req = urllib.request.Request(url, headers={
             "Referer": "https://stockcharts.com/",
             "User-Agent": "Mozilla/5.0",
+            "Accept-Encoding": "gzip",
         })
         with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            raw = resp.read()
+            if raw[:2] == b'\x1f\x8b':
+                raw = gzip.decompress(raw)
+            data = json.loads(raw.decode("utf-8"))
 
         result = _parse_response(data)
         _cache = result
