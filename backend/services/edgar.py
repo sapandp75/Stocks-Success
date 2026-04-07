@@ -94,53 +94,32 @@ def get_insider_transactions_edgar(ticker: str) -> dict:
         return {"transactions": [], "net_sentiment": "UNAVAILABLE", "source": "SEC EDGAR"}
 
 
-def get_institutional_holders_13f(ticker: str) -> dict:
-    """Fetch top institutional holders from 13F filings via edgartools."""
+def get_institutional_holders(ticker: str) -> dict:
+    """Fetch top institutional holders via yfinance (keyed by issuer)."""
     try:
-        from edgar import Company
-
-        company = Company(ticker)
-        filings = company.get_filings(form="13F-HR")
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        df = t.institutional_holders
+        if df is None or df.empty:
+            return {"top_holders": [], "total_holders_found": 0, "source": "yfinance"}
 
         holders = []
-        latest = list(filings)[:3]
-
-        for f in latest:
-            try:
-                form = f.obj()
-                if hasattr(form, "holdings"):
-                    for h in list(form.holdings)[:15]:
-                        name = getattr(h, "name", "") or getattr(h, "manager_name", "Unknown")
-                        value = getattr(h, "value", 0) or 0
-                        shares = getattr(h, "shares", 0) or 0
-                        holders.append({
-                            "fund_name": name,
-                            "shares": shares,
-                            "value_usd": value,
-                            "filing_date": str(getattr(f, "filing_date", "")),
-                        })
-                    break  # Only need the latest filing
-            except Exception:
-                continue
-
-        # Deduplicate and sort by value
-        seen = set()
-        unique = []
-        for h in holders:
-            key = h["fund_name"]
-            if key not in seen:
-                seen.add(key)
-                unique.append(h)
-        unique.sort(key=lambda x: x.get("value_usd", 0), reverse=True)
+        for _, row in df.iterrows():
+            holders.append({
+                "fund_name": str(row.get("Holder", "Unknown")),
+                "shares": int(row.get("Shares", 0) or 0),
+                "value_usd": int(row.get("Value", 0) or 0),
+                "pct_held": float(row.get("pctHeld", 0) or 0),
+            })
 
         return {
-            "top_holders": unique[:10],
-            "total_holders_found": len(unique),
-            "source": "SEC EDGAR 13F-HR",
+            "top_holders": holders[:10],
+            "total_holders_found": len(holders),
+            "source": "yfinance institutional_holders",
         }
     except Exception as e:
-        logger.warning("Failed to fetch 13F holders for %s: %s", ticker, e)
-        return {"top_holders": [], "total_holders_found": 0, "source": "SEC EDGAR"}
+        logger.warning("Failed to fetch institutional holders for %s: %s", ticker, e)
+        return {"top_holders": [], "total_holders_found": 0, "source": "yfinance"}
 
 
 def get_edgar_context(ticker: str) -> dict:
@@ -148,5 +127,5 @@ def get_edgar_context(ticker: str) -> dict:
     return {
         "filings": get_sec_filings(ticker),
         "insider_transactions": get_insider_transactions_edgar(ticker),
-        "institutional_13f": get_institutional_holders_13f(ticker),
+        "institutional_holders": get_institutional_holders(ticker),
     }

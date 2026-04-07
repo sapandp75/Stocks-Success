@@ -391,14 +391,16 @@ def generate_deep_dive(ticker: str, context: dict) -> dict:
                     for txn in ins_data.get("transactions", [])[:5]:
                         lines.append(f"  - {txn.get('insider', '')}: {txn.get('type', '')} "
                                      f"{txn.get('shares', 0)} shares ({txn.get('date', '')})")
-                if "institutional_13f" in ed:
-                    holders = ed["institutional_13f"]
+                if "institutional_holders" in ed:
+                    holders = ed["institutional_holders"]
                     if holders.get("top_holders"):
-                        lines.append("Top 13F Institutional Holders:")
+                        lines.append("Top Institutional Holders:")
                         for h in holders["top_holders"][:5]:
                             val = h.get("value_usd", 0)
                             val_str = f"${val:,.0f}" if val else "N/A"
-                            lines.append(f"  - {h.get('fund_name', '')}: {val_str}")
+                            pct = h.get("pct_held", 0)
+                            pct_str = f" ({pct:.1%})" if pct else ""
+                            lines.append(f"  - {h.get('fund_name', '')}: {val_str}{pct_str}")
             edgar_context = "\n".join(lines) if lines else "No SEC EDGAR data available."
 
         # Get company name from fundamentals

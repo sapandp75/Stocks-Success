@@ -156,15 +156,6 @@ def get_fund_flow(ticker: str) -> dict:
     if cached and is_fresh(cached["fetched_at"], ttl):
         return json.loads(cached["data_json"])
 
-    # Load prior snapshot from cache before fetching fresh data
-    prior = []
-    if cached:
-        try:
-            prior_data = json.loads(cached["data_json"])
-            prior = prior_data.get("current_holders", [])
-        except (json.JSONDecodeError, KeyError):
-            pass
-
     current = _fetch_institutional_holders(ticker)
 
     if not current:
@@ -174,12 +165,13 @@ def get_fund_flow(ticker: str) -> dict:
     for h in current:
         h["fund_type"] = classify_fund_type(h["fund_name"])
 
-    delta = compute_13f_delta(current, prior) if prior else None
-
+    # Note: yfinance only provides a current snapshot, not quarterly filings.
+    # QoQ delta is not emitted because we cannot guarantee quarter-stamped data.
     result = {
         "current_holders": current[:15],
-        "delta": delta,
+        "delta": None,
         "holder_type_breakdown": _type_breakdown(current),
+        "note": "Current snapshot only. QoQ delta requires quarter-stamped 13F filings.",
     }
 
     data_json = json.dumps(result)

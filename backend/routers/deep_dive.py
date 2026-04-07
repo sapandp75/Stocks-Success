@@ -76,28 +76,29 @@ def get_deep_dive_data(ticker: str):
 
     ai_analysis = None
     if row:
-        # Prefer full V2 sections JSON if available
+        # Always build legacy keys from DB columns (frontend depends on these)
+        ai_analysis = {
+            "dive_date": row["dive_date"],
+            "first_impression": row["ai_first_impression"],
+            "bear_case_stock": row["ai_bear_case_stock"],
+            "bear_case_business": row["ai_bear_case_business"],
+            "bull_case_rebuttal": row["ai_bull_case_rebuttal"],
+            "bull_case_upside": row["ai_bull_case_upside"],
+            "whole_picture": row["ai_whole_picture"],
+            "self_review": row["ai_self_review"],
+            "verdict": row["ai_verdict"],
+            "conviction": row["ai_conviction"],
+            "entry_grid": json.loads(row["ai_entry_grid_json"]) if row["ai_entry_grid_json"] else None,
+            "exit_playbook": row["ai_exit_playbook"],
+            "next_review_date": row["ai_next_review_date"] if "ai_next_review_date" in row.keys() else None,
+        }
+        # Merge V2 sections on top (adds new keys, legacy keys preserved from columns)
         sections_json = row["ai_sections_json"] if "ai_sections_json" in row.keys() else None
         if sections_json:
-            ai_analysis = json.loads(sections_json)
-            ai_analysis["dive_date"] = row["dive_date"]
-        else:
-            # Legacy fallback
-            ai_analysis = {
-                "dive_date": row["dive_date"],
-                "first_impression": row["ai_first_impression"],
-                "bear_case_stock": row["ai_bear_case_stock"],
-                "bear_case_business": row["ai_bear_case_business"],
-                "bull_case_rebuttal": row["ai_bull_case_rebuttal"],
-                "bull_case_upside": row["ai_bull_case_upside"],
-                "whole_picture": row["ai_whole_picture"],
-                "self_review": row["ai_self_review"],
-                "verdict": row["ai_verdict"],
-                "conviction": row["ai_conviction"],
-                "entry_grid": json.loads(row["ai_entry_grid_json"]) if row["ai_entry_grid_json"] else None,
-                "exit_playbook": row["ai_exit_playbook"],
-                "next_review_date": row["ai_next_review_date"] if "ai_next_review_date" in row.keys() else None,
-            }
+            v2 = json.loads(sections_json)
+            for k, v in v2.items():
+                if k not in ai_analysis or ai_analysis[k] is None:
+                    ai_analysis[k] = v
 
     # --- ENRICHMENTS (each in try/except — never blocks) ---
     technicals = None
