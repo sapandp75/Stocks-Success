@@ -182,6 +182,8 @@ Functions:
 
 ### WS5: Market Breadth
 
+Detailed design note: see `docs/superpowers/specs/2026-04-06-market-breadth-design.md`.
+
 **Enhance:** `backend/services/regime_checker.py`
 
 ```
@@ -194,7 +196,7 @@ Functions:
   }
 ```
 
-**Implementation:** Sample 50 stocks across sectors (not all 500 — too slow). Check price vs 200d SMA for each. Extrapolate.
+**Implementation:** Use deterministic full-universe batch download by default, with deterministic degraded-mode behavior if coverage is too low or the batch request fails. Avoid random sampling for any regime-affecting output.
 
 **Integration points:**
 - `Regime Page` — breadth gauge below SPY/QQQ cards

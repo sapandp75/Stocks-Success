@@ -24,6 +24,9 @@ INSIDER ACTIVITY:
 INSTITUTIONAL HOLDINGS:
 {institutional_context}
 
+SEC FILINGS & 13F DATA:
+{edgar_context}
+
 Produce exactly 8 sections using the headers below. Do not skip or reorder any section.
 
 ### Section 1: Data Snapshot & First Impression
@@ -52,8 +55,10 @@ Be specific and quantify where possible. Missing data points should be listed as
 ### Section 6: Whole Picture
 **Sector & Macro**: Where are we in the cycle? Tailwinds or headwinds for this sector?
 **Moat Assessment**: Pricing power, switching costs, network effects, intangible assets, cost advantages. Rate the moat (none/narrow/wide) with evidence.
-**Management Quality**: Capital allocation track record, insider ownership, compensation alignment, candor in communications.
-**Insider & Institutional Signals**: What are insiders doing (buying/selling)? Are institutions accumulating or distributing? Do these signals confirm or contradict the thesis?
+**Management Quality**: Capital allocation track record, insider ownership, compensation alignment, candor in communications. Use SEC filing data and insider transaction history if available.
+**Smart Money / 13F Positioning**: Who are the top institutional holders? Are they value funds, growth funds, or index funds? Are institutions accumulating or reducing? What does the holder composition tell us about market expectations?
+**Insider Signals**: What are insiders doing (buying/selling)? Use SEC Form 4 data if available. Do insider actions confirm or contradict the thesis?
+**PE/Strategic Acquirer Floor**: Could this company be an acquisition target? What would a strategic buyer pay? What's the floor price based on comparable M&A multiples?
 
 ### Section 7: Self-Review
 **Bias Check**: What cognitive biases might be affecting this analysis? Anchoring, confirmation bias, recency bias, narrative fallacy?
@@ -74,3 +79,4 @@ Be specific and quantify where possible. Missing data points should be listed as
 - Stop loss level and rationale
 - Time stop (re-evaluate after N months if thesis hasn't played out)
 - Thesis-breaker conditions that trigger immediate exit regardless of price
+**Next Review Date**: When should this analysis be revisited? Consider upcoming earnings, catalyst dates, or a default 90-day review cycle. State a specific date.
