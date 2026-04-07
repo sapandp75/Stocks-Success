@@ -248,3 +248,51 @@ def test_breadth_score_all_unavailable():
     score, verdict = calculate_breadth_score({}, {})
     assert score == 0.0
     assert verdict == "RISK-OFF"
+
+
+from fastapi.testclient import TestClient
+from backend.main import app
+
+
+def test_breadth_api_returns_200(monkeypatch):
+    _reset_stockcharts_cache()
+
+    # Mock stockcharts to avoid real HTTP calls
+    monkeypatch.setattr(
+        "backend.services.stockcharts.get_stockcharts_breadth",
+        lambda: stockcharts._parse_response(FAKE_STOCKCHARTS_RESPONSE),
+    )
+    # Mock yfinance breadth calculations
+    monkeypatch.setattr(
+        "backend.services.breadth.calculate_market_breadth",
+        lambda: {
+            "pct_above_200d": 50.0, "pct_above_50d": 55.0, "pct_above_20d": 40.0,
+            "method": "full_universe", "confidence": "HIGH", "breadth_signal": "HEALTHY",
+            "universe_size": 500, "sample_size": 480, "coverage_pct": 96.0,
+            "as_of": "2026-04-07", "notes": [],
+        },
+    )
+    monkeypatch.setattr(
+        "backend.services.breadth.calculate_ndx100_breadth",
+        lambda: {
+            "pct_above_200d": 45.0, "pct_above_50d": 50.0, "pct_above_20d": 35.0,
+            "method": "full_universe", "confidence": "HIGH", "breadth_signal": "WEAKENING",
+            "universe_size": 100, "sample_size": 95, "coverage_pct": 95.0,
+            "as_of": "2026-04-07", "notes": [],
+        },
+    )
+
+    client = TestClient(app)
+    resp = client.get("/api/breadth")
+    assert resp.status_code == 200
+
+    data = resp.json()
+    assert "score" in data
+    assert "verdict" in data
+    assert data["verdict"] in ("RISK-OFF", "CAUTION", "RISK-ON")
+    assert "mcclellan" in data
+    assert "advance_decline" in data
+    assert "sentiment" in data
+    assert "bullish_pct" in data
+    assert "spx_breadth" in data
+    assert "ndx_breadth" in data
