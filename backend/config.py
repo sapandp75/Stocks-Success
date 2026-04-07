@@ -5,6 +5,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "app.db"
 SP500_FALLBACK = DATA_DIR / "sp500_fallback.json"
+NDX100_FALLBACK = DATA_DIR / "ndx100_fallback.json"
 
 # API keys — set via environment variables
 FMP_API_KEY = os.getenv("FMP_API_KEY", "")
