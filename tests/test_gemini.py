@@ -40,42 +40,50 @@ def test_build_context_string_empty():
 # --- _parse_sections tests ---
 
 def test_parse_sections_basic():
-    """Parse markdown with ### Section N headers."""
+    """Parse markdown with ### Section N headers (10-section V2 format)."""
     text = """
-### Section 1: Data Snapshot & First Impression
+### Section 1: Gates & Business Summary
 Revenue is $10B, margins are healthy.
 
-### Section 2: First Impression (Deep)
-The market is pricing in 15% growth.
+### Section 2: Key Fundamentals
+PE is 25x, ROIC is 18%.
 
-### Section 3: Bear Case
+### Section 3: Growth — Historical & Forward
+Revenue CAGR 3yr is 12%.
+
+### Section 4: Bear Case
 Competition is intensifying.
 
-### Section 4: Bull Case
+### Section 5: Bull Case
 Strong moat and pricing power.
 
-### Section 5: Valuation
+### Section 6: Valuation & Price Targets
 Reverse DCF implies 8% growth.
 
-### Section 6: Whole Picture
-Sector tailwinds are strong.
+### Section 7: Moat Assessment
+Wide moat with strong pricing power.
 
-### Section 7: Self-Review
-Possible anchoring bias on historical growth.
+### Section 8: Growth Opportunities & Threats
+New markets expanding TAM.
 
-### Section 8: Verdict + Entry Grid + Exit Playbook
+### Section 9: 13F & Smart Money
+Berkshire added a position.
+
+### Section 10: Verdict — 3-5yr Scenarios & Decision
 BUY with medium conviction.
 """
     sections = _parse_sections(text)
-    assert "data_snapshot" in sections
-    assert "first_impression" in sections
+    assert "gates_summary" in sections
+    assert "key_fundamentals" in sections
+    assert "growth" in sections
     assert "bear_case" in sections
     assert "bull_case" in sections
     assert "valuation" in sections
-    assert "whole_picture" in sections
-    assert "self_review" in sections
+    assert "moat" in sections
+    assert "opportunities_threats" in sections
+    assert "smart_money" in sections
     assert "verdict" in sections
-    assert "Revenue" in sections["data_snapshot"]
+    assert "Revenue" in sections["gates_summary"]
     assert "Competition" in sections["bear_case"]
     assert "BUY" in sections["verdict"]
 

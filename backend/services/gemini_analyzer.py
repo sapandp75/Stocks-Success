@@ -11,7 +11,7 @@ from pathlib import Path
 from backend.config import GEMINI_CONFIG
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "deep_dive.txt"
+PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "deep_dive_v2.txt"
 
 
 class GeminiRateLimiter:
@@ -169,29 +169,106 @@ def _build_context_string(context: dict) -> str:
             lines.append(f"  {reg}")
         sections.append("\n".join(lines))
 
+    if "quarterly" in context and context["quarterly"]:
+        lines = ["QUARTERLY DATA:"]
+        q = context["quarterly"]
+        if isinstance(q, dict):
+            for metric in ["revenue", "eps", "fcf"]:
+                if metric in q and q[metric]:
+                    lines.append(f"  {metric.upper()} (Q/Q, Y/Y):")
+                    for entry in q[metric][:8]:
+                        qoq = f"Q/Q: {entry.get('qoq', 'N/A')}" if entry.get('qoq') is not None else "Q/Q: N/A"
+                        yoy = f"Y/Y: {entry.get('yoy', 'N/A')}" if entry.get('yoy') is not None else "Y/Y: N/A"
+                        lines.append(f"    {entry.get('quarter', '?')}: {entry.get('value', 'N/A')} ({qoq}, {yoy})")
+        sections.append("\n".join(lines))
+
+    if "growth_metrics" in context and context["growth_metrics"]:
+        lines = ["GROWTH METRICS:"]
+        gm = context["growth_metrics"]
+        if isinstance(gm, dict):
+            for k, v in gm.items():
+                if k != "roic_trend":
+                    lines.append(f"  - {k}: {v}")
+            if gm.get("roic_trend"):
+                lines.append("  ROIC Trend:")
+                for entry in gm["roic_trend"]:
+                    lines.append(f"    {entry.get('year', '?')}: {entry.get('roic', 'N/A')}")
+        sections.append("\n".join(lines))
+
+    if "forward_estimates" in context and context["forward_estimates"]:
+        lines = ["FORWARD ESTIMATES:"]
+        fe = context["forward_estimates"]
+        if isinstance(fe, dict):
+            for k, v in fe.items():
+                if k != "earnings_history":
+                    lines.append(f"  - {k}: {v}")
+            if fe.get("earnings_history"):
+                lines.append("  Earnings History (last 4Q):")
+                for q in fe["earnings_history"][:4]:
+                    lines.append(f"    {q.get('date', '?')}: actual={q.get('eps_actual', 'N/A')} vs est={q.get('eps_estimate', 'N/A')} surprise={q.get('surprise_pct', 'N/A')}%")
+        sections.append("\n".join(lines))
+
+    if "fund_flow" in context and context["fund_flow"]:
+        lines = ["13F FUND FLOW:"]
+        ff = context["fund_flow"]
+        if isinstance(ff, dict):
+            if ff.get("holder_type_breakdown"):
+                lines.append(f"  Holder types: {ff['holder_type_breakdown']}")
+            delta = ff.get("delta")
+            if delta:
+                lines.append(f"  Net direction: {delta['summary']['net_direction']}")
+                lines.append(f"  New positions: {delta['summary']['new_count']}, Exits: {delta['summary']['exit_count']}")
+                for pos in delta.get("new_positions", [])[:3]:
+                    lines.append(f"    NEW: {pos['fund_name']} ({pos['fund_type']}): {pos['shares']} shares")
+                for pos in delta.get("exits", [])[:3]:
+                    lines.append(f"    EXIT: {pos['fund_name']} ({pos['fund_type']}): {pos['shares']} shares")
+        sections.append("\n".join(lines))
+
+    if "external_targets" in context and context["external_targets"]:
+        lines = ["PRICE TARGET COMPARISON:"]
+        et = context["external_targets"]
+        if isinstance(et, dict):
+            for k, v in et.items():
+                lines.append(f"  - {k}: {v}")
+        sections.append("\n".join(lines))
+
     return "\n\n".join(sections)
 
 
 # Mapping from various heading patterns to canonical section keys
 _SECTION_MAP = {
-    "data snapshot": "data_snapshot",
-    "section 1": "data_snapshot",
-    "first impression (deep)": "first_impression",
-    "first impression deep": "first_impression",
-    "section 2": "first_impression",
+    "gates": "gates_summary",
+    "business summary": "gates_summary",
+    "section 1": "gates_summary",
+    "key fundamentals": "key_fundamentals",
+    "section 2": "key_fundamentals",
+    "growth": "growth",
+    "historical & forward": "growth",
+    "section 3": "growth",
     "bear case": "bear_case",
-    "section 3": "bear_case",
+    "section 4": "bear_case",
     "bull case": "bull_case",
-    "section 4": "bull_case",
+    "section 5": "bull_case",
     "valuation": "valuation",
-    "section 5": "valuation",
-    "whole picture": "whole_picture",
-    "section 6": "whole_picture",
-    "self-review": "self_review",
-    "self review": "self_review",
-    "section 7": "self_review",
+    "price targets": "valuation",
+    "section 6": "valuation",
+    "moat": "moat",
+    "section 7": "moat",
+    "growth opportunities": "opportunities_threats",
+    "threats": "opportunities_threats",
+    "section 8": "opportunities_threats",
+    "13f": "smart_money",
+    "smart money": "smart_money",
+    "section 9": "smart_money",
     "verdict": "verdict",
-    "section 8": "verdict",
+    "scenarios": "verdict",
+    "section 10": "verdict",
+    # Legacy compatibility
+    "data snapshot": "gates_summary",
+    "first impression": "key_fundamentals",
+    "whole picture": "moat",
+    "self-review": "smart_money",
+    "self review": "smart_money",
     "entry grid": "verdict",
     "exit playbook": "verdict",
 }
@@ -216,10 +293,10 @@ def _parse_sections(text: str) -> dict:
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         content = text[start:end].strip()
 
-        # Map heading to canonical key
+        # Map heading to canonical key (try longest patterns first to avoid partial matches)
         heading_lower = heading.lower()
         key = None
-        for pattern_str, section_key in _SECTION_MAP.items():
+        for pattern_str, section_key in sorted(_SECTION_MAP.items(), key=lambda x: len(x[0]), reverse=True):
             if pattern_str in heading_lower:
                 key = section_key
                 break
@@ -232,6 +309,21 @@ def _parse_sections(text: str) -> dict:
                 sections[key] = content
 
     return sections
+
+
+def _format_dict_section(data) -> str:
+    """Generic formatter for dict/list context data."""
+    if isinstance(data, dict):
+        lines = []
+        for k, v in data.items():
+            if isinstance(v, list) and len(v) > 5:
+                lines.append(f"- {k}: [{len(v)} items]")
+                for item in v[:5]:
+                    lines.append(f"  - {item}")
+            else:
+                lines.append(f"- {k}: {v}")
+        return "\n".join(lines)
+    return str(data)
 
 
 def generate_deep_dive(ticker: str, context: dict) -> dict:
@@ -283,19 +375,71 @@ def generate_deep_dive(ticker: str, context: dict) -> dict:
             elif isinstance(inst, list):
                 institutional_context = "\n".join(f"- {i}" for i in inst)
 
+        edgar_context = ""
+        if "edgar" in context:
+            ed = context["edgar"]
+            lines = []
+            if isinstance(ed, dict):
+                if "filings" in ed and ed["filings"]:
+                    lines.append("Recent SEC Filings:")
+                    for f in ed["filings"]:
+                        lines.append(f"  - {f.get('form', '')} ({f.get('filing_date', '')}): {f.get('description', '')}")
+                if "insider_transactions" in ed:
+                    ins_data = ed["insider_transactions"]
+                    lines.append(f"SEC Form 4 Insider Activity: {ins_data.get('net_sentiment', 'N/A')} "
+                                 f"(Buys: {ins_data.get('buy_count', 0)}, Sells: {ins_data.get('sell_count', 0)})")
+                    for txn in ins_data.get("transactions", [])[:5]:
+                        lines.append(f"  - {txn.get('insider', '')}: {txn.get('type', '')} "
+                                     f"{txn.get('shares', 0)} shares ({txn.get('date', '')})")
+                if "institutional_13f" in ed:
+                    holders = ed["institutional_13f"]
+                    if holders.get("top_holders"):
+                        lines.append("Top 13F Institutional Holders:")
+                        for h in holders["top_holders"][:5]:
+                            val = h.get("value_usd", 0)
+                            val_str = f"${val:,.0f}" if val else "N/A"
+                            lines.append(f"  - {h.get('fund_name', '')}: {val_str}")
+            edgar_context = "\n".join(lines) if lines else "No SEC EDGAR data available."
+
         # Get company name from fundamentals
         company_name = "Unknown"
         if "fundamentals" in context and isinstance(context["fundamentals"], dict):
             company_name = context["fundamentals"].get("company_name", context["fundamentals"].get("name", ticker))
 
+        # Build new context fields
+        quarterly_context = ""
+        if "quarterly" in context:
+            quarterly_context = _format_dict_section(context["quarterly"])
+
+        growth_metrics_context = ""
+        if "growth_metrics" in context:
+            growth_metrics_context = _format_dict_section(context["growth_metrics"])
+
+        forward_estimates_context = ""
+        if "forward_estimates" in context:
+            forward_estimates_context = _format_dict_section(context["forward_estimates"])
+
+        targets_context = ""
+        if "external_targets" in context:
+            targets_context = _format_dict_section(context["external_targets"])
+
+        fund_flow_context = ""
+        if "fund_flow" in context:
+            fund_flow_context = _format_dict_section(context["fund_flow"])
+
         prompt = template.format(
             ticker=ticker,
             company_name=company_name,
             data_context=data_context or "No data available. Apply fail-closed: treat all missing data as negative.",
+            quarterly_context=quarterly_context or "No quarterly data available.",
+            growth_metrics_context=growth_metrics_context or "No growth metrics available.",
+            forward_estimates_context=forward_estimates_context or "No forward estimates available.",
             peer_context=peer_context or "No peer data available.",
             analyst_context=analyst_context or "No analyst data available.",
+            targets_context=targets_context or "No price target comparison available.",
             insider_context=insider_context or "No insider data available.",
-            institutional_context=institutional_context or "No institutional data available.",
+            fund_flow_context=fund_flow_context or "No 13F fund flow data available.",
+            edgar_context=edgar_context or "No SEC EDGAR data available.",
         )
 
         # Call Gemini API

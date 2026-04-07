@@ -358,6 +358,36 @@ def analyze_deep_dive(ticker: str):
     except Exception:
         logger.warning("Analyze %s: failed to get SEC EDGAR data", ticker, exc_info=True)
 
+    try:
+        from backend.services.quarterly_data import get_quarterly_data
+        context["quarterly"] = get_quarterly_data(ticker)
+    except Exception:
+        logger.warning("Analyze %s: failed to get quarterly data", ticker, exc_info=True)
+
+    try:
+        from backend.services.growth_metrics import get_growth_metrics
+        context["growth_metrics"] = get_growth_metrics(ticker)
+    except Exception:
+        logger.warning("Analyze %s: failed to get growth metrics", ticker, exc_info=True)
+
+    try:
+        from backend.services.forward_estimates import get_forward_estimates
+        context["forward_estimates"] = get_forward_estimates(ticker)
+    except Exception:
+        logger.warning("Analyze %s: failed to get forward estimates", ticker, exc_info=True)
+
+    try:
+        from backend.services.external_targets import get_external_targets
+        context["external_targets"] = get_external_targets(ticker)
+    except Exception:
+        logger.warning("Analyze %s: failed to get external targets", ticker, exc_info=True)
+
+    try:
+        from backend.services.fund_flow import get_fund_flow
+        context["fund_flow"] = get_fund_flow(ticker)
+    except Exception:
+        logger.warning("Analyze %s: failed to get fund flow", ticker, exc_info=True)
+
     from backend.services.gemini_analyzer import generate_deep_dive
     result = generate_deep_dive(ticker, context)
 
