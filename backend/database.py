@@ -91,6 +91,7 @@ def init_db():
                 ai_conviction TEXT,
                 ai_entry_grid_json TEXT,
                 ai_exit_playbook TEXT,
+                ai_next_review_date TEXT,
                 data_completeness TEXT DEFAULT '{}'
             );
 
@@ -209,4 +210,21 @@ def init_db():
                 peers_json TEXT,
                 fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS quarterly_cache (
+                ticker TEXT PRIMARY KEY,
+                data_json TEXT,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
+        _ensure_column(conn, "deep_dives", "ai_next_review_date", "TEXT")
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    existing = {
+        row["name"]
+        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        conn.commit()
