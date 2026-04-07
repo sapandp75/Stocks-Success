@@ -222,6 +222,12 @@ def init_db():
                 data_json TEXT,
                 fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS forward_estimates_cache (
+                ticker TEXT PRIMARY KEY,
+                data_json TEXT,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
         _ensure_column(conn, "deep_dives", "ai_next_review_date", "TEXT")
 
