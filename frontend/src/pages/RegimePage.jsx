@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useRegime } from '../RegimeContext'
+import { getBreadth } from '../api'
 import RegimeBadge from '../components/RegimeBadge'
 import EarningsCalendar from '../components/EarningsCalendar'
-import BreadthGauge from '../components/BreadthGauge'
 
 function DirectionCard({ data }) {
   if (!data) return null
@@ -33,6 +35,44 @@ function DirectionCard({ data }) {
           <span style={{ color: '#6b7280' }}>SMA 200</span>
           <div className="font-semibold" style={{ color: '#1a1a2e' }}>${data.sma200?.toFixed(2)}</div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function BreadthSummaryRow() {
+  const [breadth, setBreadth] = useState(null)
+
+  useEffect(() => {
+    getBreadth().then(setBreadth).catch(() => {})
+  }, [])
+
+  if (!breadth) return null
+
+  const verdictColor = breadth.verdict === 'RISK-ON' ? '#00a562' : breadth.verdict === 'RISK-OFF' ? '#e5484d' : '#d97b0e'
+  const nysi = breadth.mcclellan?.nysi?.value
+  const bpspx = breadth.bullish_pct?.spx
+  const pct200 = breadth.spx_breadth?.pct_above_200d
+
+  return (
+    <div className="mt-6 mb-6">
+      <div className="bg-white rounded-lg border p-4 flex items-center gap-4 flex-wrap" style={{ borderColor: '#e2e4e8' }}>
+        <span className="text-sm font-bold px-3 py-1 rounded" style={{
+          backgroundColor: verdictColor + '20',
+          color: verdictColor,
+        }}>
+          {breadth.verdict} {breadth.score}/10
+        </span>
+        <div className="flex gap-3 text-sm flex-1" style={{ color: '#6b7280' }}>
+          <span>S&P {pct200 != null ? `${pct200}%` : '—'} above 200d</span>
+          <span>·</span>
+          <span>$NYSI {nysi != null ? nysi.toLocaleString() : '—'}</span>
+          <span>·</span>
+          <span>$BPSPX {bpspx != null ? `${bpspx}%` : '—'}</span>
+        </div>
+        <Link to="/breadth" className="text-sm font-medium" style={{ color: '#00a562' }}>
+          View full breadth →
+        </Link>
       </div>
     </div>
   )
@@ -80,12 +120,7 @@ export default function RegimePage() {
         <DirectionCard data={qqq} />
       </div>
 
-      {data.breadth && (
-        <div className="mt-6 mb-6">
-          <h2 className="text-lg font-bold mb-3" style={{ color: '#1a1a2e' }}>Market Breadth</h2>
-          <BreadthGauge data={data.breadth} />
-        </div>
-      )}
+      <BreadthSummaryRow />
 
       <EarningsCalendar />
     </div>
