@@ -94,3 +94,79 @@ def test_calculate_ndx100_breadth_returns_unavailable_on_failure(monkeypatch):
 
     breadth = regime_checker.calculate_ndx100_breadth()
     assert breadth["method"] == "unavailable"
+
+
+from backend.services import stockcharts
+
+
+def _reset_stockcharts_cache():
+    stockcharts._cache = None
+    stockcharts._cache_time = 0
+
+
+FAKE_STOCKCHARTS_RESPONSE = {
+    "sym": [
+        {"s": "$NYMO", "n": "NYSE McClellan Oscillator", "c": 31.62, "ch": 11.77, "pch": 59.32, "d": "2026-04-04"},
+        {"s": "$NYSI", "n": "NYSE McClellan Summation", "c": -259.87, "ch": 31.63, "pch": -10.85, "d": "2026-04-04"},
+        {"s": "$NAMO", "n": "Nasdaq McClellan Oscillator", "c": 37.58, "ch": 11.08, "pch": 41.79, "d": "2026-04-04"},
+        {"s": "$NASI", "n": "Nasdaq McClellan Summation", "c": -548.59, "ch": 37.57, "pch": -6.41, "d": "2026-04-04"},
+        {"s": "$NYAD", "n": "NYSE Advance-Decline", "c": 723, "ch": 200, "pch": 38.24, "d": "2026-04-04"},
+        {"s": "$NAAD", "n": "Nasdaq Advance-Decline", "c": 1148, "ch": 400, "pch": 53.48, "d": "2026-04-04"},
+        {"s": "$NYHL", "n": "NYSE New Highs-Lows", "c": 21, "ch": 5, "pch": 31.25, "d": "2026-04-04"},
+        {"s": "$NAHL", "n": "Nasdaq New Highs-Lows", "c": 16, "ch": 3, "pch": 23.08, "d": "2026-04-04"},
+        {"s": "$CPC", "n": "CBOE Put/Call Ratio", "c": 0.97, "ch": -0.03, "pch": -3.0, "d": "2026-04-04"},
+        {"s": "$TRIN", "n": "NYSE Arms Index", "c": 1.03, "ch": 0.1, "pch": 10.75, "d": "2026-04-04"},
+        {"s": "$VIX", "n": "Volatility Index", "c": 24.17, "ch": -1.2, "pch": -4.73, "d": "2026-04-04"},
+        {"s": "$BPSPX", "n": "S&P 500 Bullish %", "c": 43.2, "ch": 1.0, "pch": 2.37, "d": "2026-04-04"},
+        {"s": "$BPNDX", "n": "Nasdaq 100 Bullish %", "c": 42.0, "ch": 0.5, "pch": 1.2, "d": "2026-04-04"},
+        {"s": "$BPNYA", "n": "NYSE Bullish %", "c": 46.42, "ch": 0.8, "pch": 1.75, "d": "2026-04-04"},
+        {"s": "$BPINFO", "n": "Info Tech", "c": 50.7, "ch": 1.2, "pch": 2.42, "d": "2026-04-04"},
+        {"s": "$BPFINA", "n": "Financials", "c": 62.0, "ch": 0.5, "pch": 0.81, "d": "2026-04-04"},
+        {"s": "$BPHEAL", "n": "Healthcare", "c": 38.0, "ch": -1.0, "pch": -2.56, "d": "2026-04-04"},
+        {"s": "$BPINDY", "n": "Industrials", "c": 45.0, "ch": 0.3, "pch": 0.67, "d": "2026-04-04"},
+        {"s": "$BPDISC", "n": "Consumer Discretionary", "c": 35.0, "ch": -0.5, "pch": -1.41, "d": "2026-04-04"},
+        {"s": "$BPSTAP", "n": "Consumer Staples", "c": 72.0, "ch": 1.0, "pch": 1.41, "d": "2026-04-04"},
+        {"s": "$BPENER", "n": "Energy", "c": 55.0, "ch": 2.0, "pch": 3.77, "d": "2026-04-04"},
+        {"s": "$BPMATE", "n": "Materials", "c": 40.0, "ch": 0.0, "pch": 0.0, "d": "2026-04-04"},
+        {"s": "$BPREAL", "n": "Real Estate", "c": 48.0, "ch": 0.5, "pch": 1.05, "d": "2026-04-04"},
+        {"s": "$BPCOMM", "n": "Communication Services", "c": 58.0, "ch": 1.5, "pch": 2.65, "d": "2026-04-04"},
+        {"s": "$BPUTIL", "n": "Utilities", "c": 68.0, "ch": 0.8, "pch": 1.19, "d": "2026-04-04"},
+    ]
+}
+
+
+def test_parse_stockcharts_response():
+    _reset_stockcharts_cache()
+
+    result = stockcharts._parse_response(FAKE_STOCKCHARTS_RESPONSE)
+    assert result["mcclellan"]["nymo"]["value"] == 31.62
+    assert result["mcclellan"]["nysi"]["change"] == 31.63
+    assert result["advance_decline"]["nyad"]["value"] == 723
+    assert result["sentiment"]["cpc"]["value"] == 0.97
+    assert result["bullish_pct"]["spx"] == 43.2
+    assert len(result["bullish_pct"]["sectors"]) == 11
+    assert result["bullish_pct"]["sectors"][0]["symbol"].startswith("$BP")
+
+
+def test_stockcharts_returns_error_on_failure(monkeypatch):
+    _reset_stockcharts_cache()
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    result = stockcharts.get_stockcharts_breadth()
+    assert "error" in result
+    assert result["stale"] is None
+
+
+def test_stockcharts_returns_stale_on_failure(monkeypatch):
+    _reset_stockcharts_cache()
+
+    stockcharts._cache = {"mcclellan": {"nymo": {"value": 10}}}
+    stockcharts._cache_time = stockcharts.time.time() - 7200  # 2h old, within 24h stale TTL
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    result = stockcharts.get_stockcharts_breadth()
+    assert "error" in result
+    assert result["stale"] is not None
+    assert result["stale"]["mcclellan"]["nymo"]["value"] == 10
