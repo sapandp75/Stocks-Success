@@ -152,6 +152,90 @@ def main():
         except Exception:
             pass
 
+        # Quarterly data
+        try:
+            from backend.services.quarterly_data import get_quarterly_data
+            qd = get_quarterly_data(ticker)
+            if qd and any(qd.get(k) for k in ["revenue", "eps", "fcf"]):
+                print("\n## Quarterly Growth (Q/Q and Y/Y)")
+                for metric in ["revenue", "eps", "fcf"]:
+                    if qd.get(metric):
+                        print(f"\n**{metric.upper()}:**")
+                        for q in qd[metric][:8]:
+                            qoq = f"Q/Q: {q['qoq']:+.1%}" if q.get("qoq") is not None else "Q/Q: N/A"
+                            yoy = f"Y/Y: {q['yoy']:+.1%}" if q.get("yoy") is not None else "Y/Y: N/A"
+                            val = f"${q['value']:,.0f}" if q.get("value") else "N/A"
+                            print(f"  {q.get('quarter', '?')}: {val} ({qoq}, {yoy})")
+        except Exception:
+            pass
+
+        # Growth metrics
+        try:
+            from backend.services.growth_metrics import get_growth_metrics
+            gm = get_growth_metrics(ticker)
+            if gm:
+                print("\n## Growth Metrics")
+                for k in ["fcf_yield", "ev_ebit", "roic_current", "buyback_yield",
+                           "total_shareholder_yield", "accruals_ratio", "revenue_cagr_3yr",
+                           "piotroski", "implied_vs_historical_gap"]:
+                    if gm.get(k) is not None:
+                        print(f"  - {k}: {gm[k]}")
+                if gm.get("roic_trend"):
+                    print("  ROIC trend:", " → ".join(
+                        f"{r['year']}: {r['roic']:.1%}" if r.get("roic") else f"{r['year']}: N/A"
+                        for r in gm["roic_trend"]
+                    ))
+        except Exception:
+            pass
+
+        # Forward estimates
+        try:
+            from backend.services.forward_estimates import get_forward_estimates
+            fe = get_forward_estimates(ticker)
+            if fe:
+                print("\n## Forward Estimates")
+                for k in ["eps_growth_1yr", "revenue_growth_trailing", "forward_eps",
+                           "trailing_eps", "peg_ratio", "consecutive_beats", "beat_rate_4q"]:
+                    if fe.get(k) is not None:
+                        print(f"  - {k}: {fe[k]}")
+                if fe.get("earnings_history"):
+                    print("  Last 4Q earnings:")
+                    for q in fe["earnings_history"][:4]:
+                        beat = "BEAT" if q.get("beat") else "MISS" if q.get("beat") is False else "?"
+                        print(f"    {q['date']}: ${q.get('eps_actual', '?')} vs ${q.get('eps_estimate', '?')} ({beat})")
+        except Exception:
+            pass
+
+        # External targets
+        try:
+            from backend.services.external_targets import get_external_targets
+            et = get_external_targets(ticker)
+            if et and et.get("sources"):
+                print("\n## Price Targets (External)")
+                for src, data in et["sources"].items():
+                    if isinstance(data, dict):
+                        target = data.get("target") or data.get("mean")
+                        if target:
+                            print(f"  - {src}: ${target}")
+        except Exception:
+            pass
+
+        # 13F fund flow
+        try:
+            from backend.services.fund_flow import get_fund_flow
+            ff = get_fund_flow(ticker)
+            if ff and ff.get("delta"):
+                d = ff["delta"]
+                print("\n## 13F Fund Flow (QoQ)")
+                print(f"  Net direction: {d['summary']['net_direction']}")
+                print(f"  New: {d['summary']['new_count']}, Exits: {d['summary']['exit_count']}")
+                for pos in d.get("new_positions", [])[:3]:
+                    print(f"    NEW: {pos['fund_name']} ({pos['fund_type']})")
+                for pos in d.get("exits", [])[:3]:
+                    print(f"    EXIT: {pos['fund_name']} ({pos['fund_type']})")
+        except Exception:
+            pass
+
         return
 
     if args.get:
