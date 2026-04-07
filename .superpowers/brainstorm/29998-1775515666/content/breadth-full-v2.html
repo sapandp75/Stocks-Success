@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Breadth Indicator Design</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f1f3; color: #1a1a2e; }
+
+  .page-header { background: #1a1a2e; color: #fff; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; }
+  .page-header .nav { display: flex; gap: 24px; font-size: 13px; color: #9ca3af; }
+  .page-header .nav .active { color: #fff; font-weight: 600; border-bottom: 2px solid #00a562; padding-bottom: 2px; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+
+  .section-title { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; margin-top: 20px; }
+
+  /* Summary banner */
+  .summary-banner { background: #fff; border: 1px solid #e2e4e8; border-radius: 10px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .verdict-pill { font-size: 15px; font-weight: 800; padding: 6px 16px; border-radius: 6px; }
+  .verdict-pill.risk-off { background: #fef2f2; color: #e5484d; }
+  .verdict-pill.neutral { background: #fef9c3; color: #d97b0e; }
+  .verdict-pill.risk-on { background: #dcfce7; color: #00a562; }
+  .score-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #6b7280; }
+  .score-track { width: 120px; height: 6px; background: #e2e4e8; border-radius: 3px; overflow: hidden; }
+  .score-fill { height: 100%; border-radius: 3px; }
+  .banner-meta { font-size: 11px; color: #9ca3af; }
+
+  /* Grid of indicator cards */
+  .cards-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .cards-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .cards-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+  .ind-card { background: #fff; border: 1px solid #e2e4e8; border-radius: 8px; padding: 14px; }
+  .ind-card .ind-label { font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .ind-card .ind-value { font-size: 26px; font-weight: 800; line-height: 1; margin-bottom: 2px; }
+  .ind-card .ind-sub { font-size: 11px; color: #6b7280; margin-bottom: 8px; }
+  .ind-card .ind-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
+  .ind-card .sparkbar { display: flex; align-items: flex-end; gap: 2px; height: 24px; margin-top: 8px; }
+  .ind-card .sparkbar span { flex: 1; border-radius: 1px; min-width: 4px; }
+
+  .badge-green { background: #dcfce7; color: #00a562; }
+  .badge-amber { background: #fef9c3; color: #d97b0e; }
+  .badge-red { background: #fef2f2; color: #e5484d; }
+  .badge-gray { background: #f3f4f6; color: #6b7280; }
+
+  .col-green { color: #00a562; }
+  .col-amber { color: #d97b0e; }
+  .col-red { color: #e5484d; }
+  .col-gray { color: #6b7280; }
+
+  /* McClellan gauge */
+  .mcclellan-card { background: #fff; border: 1px solid #e2e4e8; border-radius: 8px; padding: 14px; }
+  .osc-track { position: relative; height: 8px; background: linear-gradient(to right, #fef2f2, #fef9c3, #dcfce7, #fef9c3, #fef2f2); border-radius: 4px; margin: 10px 0 4px; }
+  .osc-needle { position: absolute; width: 3px; height: 14px; background: #1a1a2e; border-radius: 2px; top: -3px; transform: translateX(-50%); }
+  .osc-labels { display: flex; justify-content: space-between; font-size: 9px; color: #9ca3af; }
+
+  /* Sector heatmap */
+  .sector-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .sector-cell { background: #fff; border: 1px solid #e2e4e8; border-radius: 6px; padding: 8px; text-align: center; }
+  .sector-cell .sec-name { font-size: 9px; color: #6b7280; margin-bottom: 3px; }
+  .sector-cell .sec-pct { font-size: 14px; font-weight: 800; }
+  .sector-cell .sec-bar { height: 3px; border-radius: 2px; margin-top: 4px; }
+
+  /* Note callout */
+  .note { background: #f7f8fa; border: 1px solid #e2e4e8; border-radius: 6px; padding: 10px 14px; font-size: 11px; color: #6b7280; margin-top: 6px; }
+  .note strong { color: #1a1a2e; }
+
+  /* Divider */
+  hr { border: none; border-top: 1px solid #e2e4e8; margin: 18px 0; }
+
+  .page-title { font-size: 20px; font-weight: 800; color: #1a1a2e; margin-bottom: 4px; }
+  .page-subtitle { font-size: 12px; color: #6b7280; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div style="font-weight:700;font-size:14px;">Contrarian Platform</div>
+  <div class="nav">
+    <span>Regime</span>
+    <span>Screener</span>
+    <span>Deep Dive</span>
+    <span>Options</span>
+    <span class="active">Breadth</span>
+    <span>Watchlist</span>
+    <span>Positions</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="page-title">Market Breadth</div>
+  <div class="page-subtitle">Participation, distribution, and momentum — as of Apr 6, 2026</div>
+
+  <!-- OVERALL SIGNAL -->
+  <div class="summary-banner">
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div class="verdict-pill risk-off">RISK-OFF</div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#1a1a2e;">Breadth Score: 2.1 / 10</div>
+        <div style="font-size:11px;color:#6b7280;">Internal market deterioration — majority of stocks below key MAs</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:20px;align-items:center;">
+      <div class="score-bar">
+        <span>Participation</span>
+        <div class="score-track"><div class="score-fill" style="width:35%;background:#e5484d;"></div></div>
+        <span style="font-weight:700;color:#e5484d;">35%</span>
+      </div>
+      <div class="score-bar">
+        <span>Momentum</span>
+        <div class="score-track"><div class="score-fill" style="width:28%;background:#e5484d;"></div></div>
+        <span style="font-weight:700;color:#e5484d;">28%</span>
+      </div>
+      <div class="banner-meta">Refreshed 08:30 · 1hr cache</div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: PARTICIPATION -->
+  <div class="section-title">1 — Participation (% above moving averages)</div>
+  <div class="cards-grid">
+
+    <div class="ind-card">
+      <div class="ind-label">S&P 500 · 200d SMA</div>
+      <div class="ind-value col-amber">47%</div>
+      <div class="ind-sub">of 503 stocks above 200d</div>
+      <span class="ind-badge badge-amber">WEAKENING</span>
+      <div class="ind-sub" style="margin-top:6px;margin-bottom:0;">
+        50d: <strong>52%</strong> · 20d: <strong class="col-red">38%</strong>
+      </div>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-label">Nasdaq 100 · 200d SMA</div>
+      <div class="ind-value col-red">41%</div>
+      <div class="ind-sub">of 102 stocks above 200d</div>
+      <span class="ind-badge badge-red">POOR</span>
+      <div class="ind-sub" style="margin-top:6px;margin-bottom:0;">
+        50d: <strong class="col-red">44%</strong> · 20d: <strong class="col-red">31%</strong>
+      </div>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-label">S&P 500 · 52-week Highs/Lows</div>
+      <div class="ind-value col-red">6.5×</div>
+      <div class="ind-sub">lows vs highs ratio</div>
+      <span class="ind-badge badge-red">DISTRIBUTION</span>
+      <div class="ind-sub" style="margin-top:6px;margin-bottom:0;">
+        Highs: <strong class="col-green">48</strong> · Lows: <strong class="col-red">312</strong>
+      </div>
+    </div>
+
+    <div class="ind-card">
+      <div class="ind-label">Nasdaq 100 · 52-week Highs/Lows</div>
+      <div class="ind-value col-red">8.2×</div>
+      <div class="ind-sub">lows vs highs ratio</div>
+      <span class="ind-badge badge-red">DISTRIBUTION</span>
+      <div class="ind-sub" style="margin-top:6px;margin-bottom:0;">
+        Highs: <strong class="col-green">8</strong> · Lows: <strong class="col-red">65</strong>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- SECTION 2: MOMENTUM (McClellan) -->
+  <div class="section-title" style="margin-top:16px;">2 — Breadth Momentum (McClellan Oscillator &amp; Summation Index)</div>
+  <div class="note" style="margin-bottom:10px;">
+    <strong>What these are:</strong> Calculated from daily advance/decline of all S&P 500 + Nasdaq 100 stocks. McClellan Oscillator = short-term breadth pulse (EMA19 − EMA39 of A/D). Summation Index (NASI/NYSI equivalent) = running cumulative sum — trend of breadth over weeks.
+  </div>
+  <div class="cards-grid">
+
+    <div class="mcclellan-card">
+      <div class="ind-label">S&P McClellan Oscillator</div>
+      <div class="ind-value col-red" style="margin:4px 0;">−82</div>
+      <div class="ind-sub">range: −150 to +150</div>
+      <div class="osc-track">
+        <div class="osc-needle" style="left: calc(25%)"></div>
+      </div>
+      <div class="osc-labels"><span>−150 oversold</span><span>0</span><span>+150 overbought</span></div>
+      <span class="ind-badge badge-red" style="margin-top:8px;display:inline-block;">OVERSOLD TERRITORY</span>
+    </div>
+
+    <div class="mcclellan-card">
+      <div class="ind-label">S&P Summation Index (NYSI equiv.)</div>
+      <div class="ind-value col-red" style="margin:4px 0;">−1,240</div>
+      <div class="ind-sub">negative = downtrend in breadth</div>
+      <div class="osc-track">
+        <div class="osc-needle" style="left: 20%"></div>
+      </div>
+      <div class="osc-labels"><span>Bear</span><span>0</span><span>Bull</span></div>
+      <span class="ind-badge badge-red" style="margin-top:8px;display:inline-block;">BEARISH</span>
+    </div>
+
+    <div class="mcclellan-card">
+      <div class="ind-label">Nasdaq McClellan Oscillator</div>
+      <div class="ind-value col-red" style="margin:4px 0;">−91</div>
+      <div class="ind-sub">range: −150 to +150</div>
+      <div class="osc-track">
+        <div class="osc-needle" style="left: 22%"></div>
+      </div>
+      <div class="osc-labels"><span>−150 oversold</span><span>0</span><span>+150 overbought</span></div>
+      <span class="ind-badge badge-red" style="margin-top:8px;display:inline-block;">OVERSOLD TERRITORY</span>
+    </div>
+
+    <div class="mcclellan-card">
+      <div class="ind-label">Nasdaq Summation Index (NASI equiv.)</div>
+      <div class="ind-value col-red" style="margin:4px 0;">−890</div>
+      <div class="ind-sub">negative = downtrend in breadth</div>
+      <div class="osc-track">
+        <div class="osc-needle" style="left: 22%"></div>
+      </div>
+      <div class="osc-labels"><span>Bear</span><span>0</span><span>Bull</span></div>
+      <span class="ind-badge badge-red" style="margin-top:8px;display:inline-block;">BEARISH</span>
+    </div>
+
+  </div>
+
+  <!-- SECTION 3: SECTOR BREADTH -->
+  <div class="section-title" style="margin-top:16px;">3 — Sector Breadth (% above 50d SMA)</div>
+  <div class="sector-grid">
+    <div class="sector-cell">
+      <div class="sec-name">Technology</div>
+      <div class="sec-pct col-red">33%</div>
+      <div class="sec-bar" style="background:#e5484d;width:33%;margin:0 auto;"></div>
+    </div>
+    <div class="sector-cell">
+      <div class="sec-name">Healthcare</div>
+      <div class="sec-pct col-amber">54%</div>
+      <div class="sec-bar" style="background:#d97b0e;width:54%;margin:0 auto;"></div>
+    </div>
+    <div class="sector-cell">
+      <div class="sec-name">Financials</div>
+      <div class="sec-pct col-amber">48%</div>
+      <div class="sec-bar" style="background:#d97b0e;width:48%;margin:0 auto;"></div>
+    </div>
+    <div class="sector-cell">
+      <div class="sec-name">Energy</div>
+      <div class="sec-pct col-red">29%</div>
+      <div class="sec-bar" style="background:#e5484d;width:29%;margin:0 auto;"></div>
+    </div>
+    <div class="sector-cell">
+      <div class="sec-name">Consumer Disc.</div>
+      <div class="sec-pct col-red">36%</div>
+      <div class="sec-bar" style="background:#e5484d;width:36%;margin:0 auto;"></div>
+    </div>
+    <div class="sector-cell">
+      <div class="sec-name">Industrials</div>
+      <div class="sec-pct col-amber">51%</div>
+      <div class="sec-bar" style="background:#d97b0e;width:51%;margin:0 auto;"></div>
+    </div>
+    <div class="sector-cell">
+      <div class="sec-name">Comm. Services</div>
+      <div class="sec-pct col-red">31%</div>
+      <div class="sec-bar" style="background:#e5484d;width:31%;margin:0 auto;"></div>
+    </div>
+    <div class="sector-cell">
+      <div class="sec-name">Utilities</div>
+      <div class="sec-pct col-green">72%</div>
+      <div class="sec-bar" style="background:#00a562;width:72%;margin:0 auto;"></div>
+    </div>
+    <div class="sector-cell">
+      <div class="sec-name">Consumer Stap.</div>
+      <div class="sec-pct col-green">68%</div>
+      <div class="sec-bar" style="background:#00a562;width:68%;margin:0 auto;"></div>
+    </div>
+    <div class="sector-cell">
+      <div class="sec-name">Real Estate</div>
+      <div class="sec-pct col-amber">55%</div>
+      <div class="sec-bar" style="background:#d97b0e;width:55%;margin:0 auto;"></div>
+    </div>
+  </div>
+  <div class="note" style="margin-top:8px;">
+    <strong>Contrarian note:</strong> Utilities and Consumer Staples leading (defensive rotation) while Tech and Energy collapse — consistent with risk-off. Extreme oversold on McClellan Oscillator (&lt;−80) has historically been a mean-reversion setup within 10–20 trading days.
+  </div>
+
+  <!-- WHAT'S NOT INCLUDED -->
+  <hr>
+  <div class="note">
+    <strong>Not included (no free data source):</strong> NAAIM Exposure Index (weekly survey, naaim.org — no API), $TRIN Arms Index (requires real-time intraday data), real StockCharts $NYSI/$NASI values (proprietary). The McClellan indicators above are calculated from raw price data and are equivalent but not identical.
+  </div>
+
+</div>
+
+<script>
+  // Highlight note about clickable options
+  document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;bottom:0;left:0;right:0;background:#1a1a2e;color:#9ca3af;text-align:center;padding:10px;font-size:12px;">This is a mockup of the full Breadth page. Let me know what to change — layout, sections, what to add or remove.</div>');
+</script>
+</body>
+</html>

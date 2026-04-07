@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Breadth Page — Full Design</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f1f3; color: #1a1a2e; font-size: 13px; }
+
+  .navbar { background: #1a1a2e; color: #fff; padding: 0 20px; height: 44px; display: flex; align-items: center; justify-content: space-between; }
+  .navbar .brand { font-weight: 800; font-size: 13px; letter-spacing: -0.3px; }
+  .navbar nav { display: flex; gap: 0; height: 44px; }
+  .navbar nav a { color: #9ca3af; font-size: 12px; font-weight: 500; padding: 0 14px; display: flex; align-items: center; text-decoration: none; border-bottom: 2px solid transparent; }
+  .navbar nav a.active { color: #fff; border-bottom-color: #00a562; }
+  .navbar nav a:hover { color: #e5e7eb; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 20px 16px; }
+
+  .page-hdr { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+  .page-hdr h1 { font-size: 18px; font-weight: 800; }
+  .page-hdr .ts { font-size: 11px; color: #9ca3af; }
+
+  /* Summary strip */
+  .summary { background: #fff; border: 1px solid #e2e4e8; border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; display: flex; align-items: center; gap: 24px; }
+  .verdict { font-size: 13px; font-weight: 800; padding: 5px 14px; border-radius: 6px; }
+  .v-roff { background: #fef2f2; color: #e5484d; }
+  .v-caution { background: #fef9c3; color: #d97b0e; }
+  .v-ron { background: #dcfce7; color: #00a562; }
+  .summary-note { font-size: 12px; color: #6b7280; flex: 1; }
+  .summary-note strong { color: #1a1a2e; }
+  .score-pill { background: #f3f4f6; border-radius: 6px; padding: 6px 12px; text-align: center; }
+  .score-pill .val { font-size: 18px; font-weight: 800; }
+  .score-pill .lbl { font-size: 10px; color: #9ca3af; }
+
+  /* Section header */
+  .sec-hdr { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.1em; margin: 18px 0 8px; display: flex; align-items: center; gap: 8px; }
+  .sec-hdr::after { content: ''; flex: 1; height: 1px; background: #e2e4e8; }
+
+  /* Cards grid */
+  .g4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .g3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .g2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+
+  /* Indicator card */
+  .card { background: #fff; border: 1px solid #e2e4e8; border-radius: 8px; padding: 12px 14px; }
+  .card .lbl { font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 5px; }
+  .card .sym { font-size: 9px; color: #c4c7cc; margin-bottom: 3px; font-family: monospace; }
+  .card .val { font-size: 24px; font-weight: 800; line-height: 1.1; margin-bottom: 3px; }
+  .card .sub { font-size: 11px; color: #6b7280; margin-bottom: 6px; }
+  .card .badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .card .chg { font-size: 11px; font-weight: 600; margin-left: 6px; }
+
+  /* Colors */
+  .c-green { color: #00a562; }
+  .c-amber { color: #d97b0e; }
+  .c-red { color: #e5484d; }
+  .c-gray { color: #9ca3af; }
+
+  .bg-green { background: #dcfce7; color: #00a562; }
+  .bg-amber { background: #fef9c3; color: #d97b0e; }
+  .bg-red { background: #fef2f2; color: #e5484d; }
+  .bg-gray { background: #f3f4f6; color: #6b7280; }
+
+  /* Oscillator bar */
+  .osc-wrap { margin: 8px 0 3px; position: relative; }
+  .osc-track { height: 5px; border-radius: 3px; background: linear-gradient(to right, #e5484d 0%, #fef9c3 40%, #dcfce7 60%, #fef9c3 80%, #e5484d 100%); position: relative; }
+  .osc-needle { position: absolute; width: 2px; height: 11px; background: #1a1a2e; top: -3px; border-radius: 1px; transform: translateX(-50%); }
+  .osc-row { display: flex; justify-content: space-between; font-size: 9px; color: #c4c7cc; margin-top: 2px; }
+
+  /* Bullish percent bar (horizontal) */
+  .bp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .bp-row .bp-lbl { font-size: 11px; color: #6b7280; width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bp-row .bp-track { flex: 1; height: 6px; background: #f3f4f6; border-radius: 3px; overflow: hidden; }
+  .bp-row .bp-fill { height: 100%; border-radius: 3px; }
+  .bp-row .bp-val { font-size: 11px; font-weight: 700; width: 36px; text-align: right; }
+
+  /* Divider cards */
+  .card-wide { background: #fff; border: 1px solid #e2e4e8; border-radius: 8px; padding: 14px 16px; }
+
+  .source-note { font-size: 10px; color: #c4c7cc; margin-top: 16px; padding: 8px 12px; background: #f7f8fa; border-radius: 6px; border: 1px solid #e2e4e8; }
+</style>
+</head>
+<body>
+
+<div class="navbar">
+  <div class="brand">Contrarian Platform</div>
+  <nav>
+    <a href="#">Regime</a>
+    <a href="#">Screener</a>
+    <a href="#">Deep Dive</a>
+    <a href="#">Options</a>
+    <a href="#" class="active">Breadth</a>
+    <a href="#">Watchlist</a>
+    <a href="#">Positions</a>
+  </nav>
+</div>
+
+<div class="container">
+
+  <div class="page-hdr">
+    <h1>Market Breadth</h1>
+    <div class="ts">Live data · StockCharts · Apr 6, 2026 16:00 · 1hr cache</div>
+  </div>
+
+  <!-- SUMMARY STRIP -->
+  <div class="summary">
+    <div class="verdict v-caution">CAUTION</div>
+    <div class="summary-note">
+      <strong>Summation indexes still negative</strong> ($NYSI −260, $NASI −549) — breadth trend remains broken. McClellan oscillators have bounced from extreme lows (+32/+38), which can indicate short-term mean reversion but is not yet a trend reversal.
+    </div>
+    <div class="score-pill"><div class="val c-amber">4.1</div><div class="lbl">Breadth Score /10</div></div>
+    <div class="score-pill"><div class="val c-amber">43%</div><div class="lbl">$BPSPX</div></div>
+    <div class="score-pill"><div class="val c-red">−260</div><div class="lbl">$NYSI</div></div>
+  </div>
+
+  <!-- SECTION 1: MCCLELLAN OSCILLATOR & SUMMATION -->
+  <div class="sec-hdr">Breadth Momentum — McClellan Indicators (StockCharts live)</div>
+  <div class="g4">
+
+    <div class="card">
+      <div class="sym">$NYMO</div>
+      <div class="lbl">NYSE McClellan Oscillator</div>
+      <div class="val c-green">+31.6 <span class="chg c-green" style="font-size:12px;">↑+11.8</span></div>
+      <div class="sub">Short-term breadth pulse · NYSE</div>
+      <div class="osc-wrap">
+        <div class="osc-track"><div class="osc-needle" style="left:60%"></div></div>
+        <div class="osc-row"><span>−150 oversold</span><span>0</span><span>+150 overbought</span></div>
+      </div>
+      <span class="badge bg-amber" style="margin-top:6px;display:inline-block;">RECOVERING</span>
+    </div>
+
+    <div class="card">
+      <div class="sym">$NYSI</div>
+      <div class="lbl">NYSE McClellan Summation</div>
+      <div class="val c-red">−259.9 <span class="chg c-green" style="font-size:12px;">↑+31.6</span></div>
+      <div class="sub">Medium-term breadth trend · NYSE</div>
+      <div class="osc-wrap">
+        <div class="osc-track"><div class="osc-needle" style="left:29%"></div></div>
+        <div class="osc-row"><span>Bearish</span><span>0</span><span>Bullish</span></div>
+      </div>
+      <span class="badge bg-red" style="margin-top:6px;display:inline-block;">BEARISH TERRITORY</span>
+    </div>
+
+    <div class="card">
+      <div class="sym">$NAMO</div>
+      <div class="lbl">Nasdaq McClellan Oscillator</div>
+      <div class="val c-green">+37.6 <span class="chg c-green" style="font-size:12px;">↑+11.1</span></div>
+      <div class="sub">Short-term breadth pulse · Nasdaq</div>
+      <div class="osc-wrap">
+        <div class="osc-track"><div class="osc-needle" style="left:62%"></div></div>
+        <div class="osc-row"><span>−150 oversold</span><span>0</span><span>+150 overbought</span></div>
+      </div>
+      <span class="badge bg-amber" style="margin-top:6px;display:inline-block;">RECOVERING</span>
+    </div>
+
+    <div class="card">
+      <div class="sym">$NASI</div>
+      <div class="lbl">Nasdaq McClellan Summation</div>
+      <div class="val c-red">−548.6 <span class="chg c-green" style="font-size:12px;">↑+37.6</span></div>
+      <div class="sub">Medium-term breadth trend · Nasdaq</div>
+      <div class="osc-wrap">
+        <div class="osc-track"><div class="osc-needle" style="left:23%"></div></div>
+        <div class="osc-row"><span>Bearish</span><span>0</span><span>Bullish</span></div>
+      </div>
+      <span class="badge bg-red" style="margin-top:6px;display:inline-block;">BEARISH TERRITORY</span>
+    </div>
+
+  </div>
+
+  <!-- SECTION 2: ADVANCE/DECLINE + HIGHS/LOWS -->
+  <div class="sec-hdr">Advance/Decline &amp; New Highs/Lows (StockCharts live)</div>
+  <div class="g4">
+
+    <div class="card">
+      <div class="sym">$NYAD</div>
+      <div class="lbl">NYSE Advance-Decline</div>
+      <div class="val c-green">+723 <span style="font-size:11px;color:#9ca3af;">today</span></div>
+      <div class="sub">Stocks advancing vs declining</div>
+      <span class="badge bg-green" style="margin-top:6px;display:inline-block;">ADVANCING</span>
+    </div>
+
+    <div class="card">
+      <div class="sym">$NAAD</div>
+      <div class="lbl">Nasdaq Advance-Decline</div>
+      <div class="val c-green">+1,148 <span style="font-size:11px;color:#9ca3af;">today</span></div>
+      <div class="sub">Stocks advancing vs declining</div>
+      <span class="badge bg-green" style="margin-top:6px;display:inline-block;">ADVANCING</span>
+    </div>
+
+    <div class="card">
+      <div class="sym">$NYHL</div>
+      <div class="lbl">NYSE New Highs − Lows</div>
+      <div class="val c-green">+21 <span class="chg c-green" style="font-size:12px;">↑+67</span></div>
+      <div class="sub">Daily 52wk highs minus lows</div>
+      <span class="badge bg-amber" style="margin-top:6px;display:inline-block;">MARGINAL</span>
+    </div>
+
+    <div class="card">
+      <div class="sym">$NAHL</div>
+      <div class="lbl">Nasdaq New Highs − Lows</div>
+      <div class="val c-green">+16 <span class="chg c-green" style="font-size:12px;">↑+114</span></div>
+      <div class="sub">Daily 52wk highs minus lows</div>
+      <span class="badge bg-amber" style="margin-top:6px;display:inline-block;">MARGINAL</span>
+    </div>
+
+  </div>
+
+  <!-- SECTION 3: PARTICIPATION (our own calculation) -->
+  <div class="sec-hdr">Participation — % Above Moving Averages (calculated from 500+ stocks)</div>
+  <div class="g4">
+
+    <div class="card">
+      <div class="lbl">S&amp;P 500 · above 200d</div>
+      <div class="val c-amber">47%</div>
+      <div class="sub">of 503 stocks</div>
+      <div style="font-size:11px;color:#6b7280;">50d: <strong>52%</strong> · 20d: <strong class="c-red">38%</strong></div>
+      <span class="badge bg-amber" style="margin-top:6px;display:inline-block;">WEAKENING</span>
+    </div>
+
+    <div class="card">
+      <div class="lbl">Nasdaq 100 · above 200d</div>
+      <div class="val c-red">41%</div>
+      <div class="sub">of 102 stocks</div>
+      <div style="font-size:11px;color:#6b7280;">50d: <strong class="c-red">44%</strong> · 20d: <strong class="c-red">31%</strong></div>
+      <span class="badge bg-red" style="margin-top:6px;display:inline-block;">POOR</span>
+    </div>
+
+    <div class="card">
+      <div class="sym">$BPSPX</div>
+      <div class="lbl">S&amp;P 500 Bullish %</div>
+      <div class="val c-amber">43.2%</div>
+      <div class="sub">% on Point &amp; Figure buy signal</div>
+      <span class="badge bg-amber" style="margin-top:6px;display:inline-block;">BEAR MARKET</span>
+    </div>
+
+    <div class="card">
+      <div class="sym">$BPNDX</div>
+      <div class="lbl">Nasdaq 100 Bullish %</div>
+      <div class="val c-amber">42.0%</div>
+      <div class="sub">% on Point &amp; Figure buy signal</div>
+      <span class="badge bg-amber" style="margin-top:6px;display:inline-block;">BEAR MARKET</span>
+    </div>
+
+  </div>
+
+  <!-- SECTION 4: SENTIMENT INDICATORS -->
+  <div class="sec-hdr">Sentiment &amp; Flow (StockCharts live)</div>
+  <div class="g3">
+
+    <div class="card">
+      <div class="sym">$CPC</div>
+      <div class="lbl">CBOE Put/Call Ratio</div>
+      <div class="val c-amber">0.97 <span class="chg c-green" style="font-size:12px;">↓−0.08</span></div>
+      <div class="sub">Above 1.0 = fear. Below 0.7 = complacency.</div>
+      <span class="badge bg-amber" style="margin-top:6px;display:inline-block;">NEUTRAL-FEAR</span>
+      <div style="font-size:10px;color:#9ca3af;margin-top:4px;">Contrarian: fear not extreme enough yet</div>
+    </div>
+
+    <div class="card">
+      <div class="sym">$TRIN</div>
+      <div class="lbl">NYSE Arms Index (TRIN)</div>
+      <div class="val c-gray">1.03</div>
+      <div class="sub">Below 1 = buyers in control. Above 2 = panic.</div>
+      <span class="badge bg-gray" style="margin-top:6px;display:inline-block;">NEUTRAL</span>
+      <div style="font-size:10px;color:#9ca3af;margin-top:4px;">Volume-weighted A/D ratio</div>
+    </div>
+
+    <div class="card">
+      <div class="sym">$VIX</div>
+      <div class="lbl">VIX — Volatility Index</div>
+      <div class="val c-amber">24.2 <span class="chg c-red" style="font-size:12px;">↑+0.3</span></div>
+      <div class="sub">VIX Tax: +61% above normal (baseline 15)</div>
+      <span class="badge bg-amber" style="margin-top:6px;display:inline-block;">ELEVATED</span>
+      <div style="font-size:10px;color:#9ca3af;margin-top:4px;">Not extreme enough for capitulation</div>
+    </div>
+
+  </div>
+
+  <!-- SECTION 5: SECTOR BULLISH % HEATMAP -->
+  <div class="sec-hdr">Sector Bullish % — Point &amp; Figure Buy Signals (StockCharts live)</div>
+  <div class="card-wide">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">
+      <div>
+        <!-- Left column sectors -->
+        <div class="bp-row"><span class="bp-lbl">Info Technology</span><div class="bp-track"><div class="bp-fill" style="width:50.7%;background:#d97b0e;"></div></div><span class="bp-val c-amber">50.7%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Financials</span><div class="bp-track"><div class="bp-fill" style="width:43.4%;background:#d97b0e;"></div></div><span class="bp-val c-amber">43.4%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Healthcare</span><div class="bp-track"><div class="bp-fill" style="width:31.7%;background:#e5484d;"></div></div><span class="bp-val c-red">31.7%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Industrials</span><div class="bp-track"><div class="bp-fill" style="width:31.6%;background:#e5484d;"></div></div><span class="bp-val c-red">31.6%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Comm. Services</span><div class="bp-track"><div class="bp-fill" style="width:34.8%;background:#e5484d;"></div></div><span class="bp-val c-red">34.8%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Consumer Disc.</span><div class="bp-track"><div class="bp-fill" style="width:31.3%;background:#e5484d;"></div></div><span class="bp-val c-red">31.3%</span></div>
+      </div>
+      <div>
+        <!-- Right column sectors -->
+        <div class="bp-row"><span class="bp-lbl">Utilities</span><div class="bp-track"><div class="bp-fill" style="width:80.7%;background:#00a562;"></div></div><span class="bp-val c-green">80.7%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Energy</span><div class="bp-track"><div class="bp-fill" style="width:81.8%;background:#00a562;"></div></div><span class="bp-val c-green">81.8%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Materials</span><div class="bp-track"><div class="bp-fill" style="width:65.4%;background:#00a562;"></div></div><span class="bp-val c-green">65.4%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Consumer Stap.</span><div class="bp-track"><div class="bp-fill" style="width:25%;background:#e5484d;"></div></div><span class="bp-val c-red">25.0%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Real Estate</span><div class="bp-track"><div class="bp-fill" style="width:29%;background:#e5484d;"></div></div><span class="bp-val c-red">29.0%</span></div>
+        <div class="bp-row"><span class="bp-lbl">Telecom</span><div class="bp-track"><div class="bp-fill" style="width:52.5%;background:#d97b0e;"></div></div><span class="bp-val c-amber">52.5%</span></div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:#9ca3af;margin-top:10px;padding-top:8px;border-top:1px solid #f3f4f6;">
+      <strong style="color:#1a1a2e;">Contrarian read:</strong> Utilities (80.7%) and Energy (81.8%) leading hard = defensive rotation + commodity hedge. Tech (50.7%) hanging on. Consumer at extremes = potential mean reversion targets.
+    </div>
+  </div>
+
+  <div class="source-note">
+    Data: StockCharts j-sum endpoint (live, 1hr cache) · McClellan indicators, A/D lines, TRIN, Put/Call ·
+    % above MA calculated from yfinance batch download of S&P 500 + Nasdaq 100 components
+  </div>
+
+</div>
+
+<script>
+  // Mock footer
+  document.body.insertAdjacentHTML('beforeend', `
+    <div style="position:fixed;bottom:0;left:0;right:0;background:#1a1a2e;color:#9ca3af;text-align:center;padding:8px;font-size:11px;">
+      Mockup — all values are real live data from Apr 6, 2026 · Tell me what to change
+    </div>
+  `);
+</script>
+</body>
+</html>
