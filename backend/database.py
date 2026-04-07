@@ -92,6 +92,7 @@ def init_db():
                 ai_entry_grid_json TEXT,
                 ai_exit_playbook TEXT,
                 ai_next_review_date TEXT,
+                ai_sections_json TEXT,
                 data_completeness TEXT DEFAULT '{}'
             );
 
@@ -242,6 +243,7 @@ def init_db():
             );
         """)
         _ensure_column(conn, "deep_dives", "ai_next_review_date", "TEXT")
+        _ensure_column(conn, "deep_dives", "ai_sections_json", "TEXT")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

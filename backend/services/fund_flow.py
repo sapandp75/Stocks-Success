@@ -1,6 +1,6 @@
 """
 13F Fund Flow Analysis — Quarter-over-quarter institutional ownership delta.
-Uses edgartools to fetch current and prior 13F filings, computes net flow.
+Uses yfinance institutional_holders (keyed by issuer) for current snapshot.
 """
 import json
 import logging
@@ -113,31 +113,24 @@ def compute_13f_delta(
     }
 
 
-def _fetch_13f_holders(ticker: str, filing_index: int = 0) -> list[dict]:
-    """Fetch holders from Nth most recent 13F filing via edgartools."""
+def _fetch_institutional_holders(ticker: str) -> list[dict]:
+    """Fetch institutional holders via yfinance (keyed by issuer, not by fund)."""
     try:
-        from edgar import Company
-        company = Company(ticker)
-        filings = company.get_filings(form="13F-HR")
-        filing_list = list(filings)
-
-        if len(filing_list) <= filing_index:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        df = t.institutional_holders
+        if df is None or df.empty:
             return []
-
-        f = filing_list[filing_index]
-        form = f.obj()
         holders = []
-        if hasattr(form, "holdings"):
-            for h in list(form.holdings)[:30]:
-                name = getattr(h, "name", "") or getattr(h, "manager_name", "Unknown")
-                holders.append({
-                    "fund_name": name,
-                    "shares": getattr(h, "shares", 0) or 0,
-                    "value_usd": getattr(h, "value", 0) or 0,
-                })
-        return holders
+        for _, row in df.iterrows():
+            holders.append({
+                "fund_name": str(row.get("Holder", "Unknown")),
+                "shares": int(row.get("Shares", 0) or 0),
+                "value_usd": int(row.get("Value", 0) or 0),
+            })
+        return holders[:30]
     except Exception as e:
-        logger.warning("Failed to fetch 13F (index=%d) for %s: %s", filing_index, ticker, e)
+        logger.warning("Failed to fetch institutional holders for %s: %s", ticker, e)
         return []
 
 
@@ -163,11 +156,19 @@ def get_fund_flow(ticker: str) -> dict:
     if cached and is_fresh(cached["fetched_at"], ttl):
         return json.loads(cached["data_json"])
 
-    current = _fetch_13f_holders(ticker, 0)
-    prior = _fetch_13f_holders(ticker, 1)
+    # Load prior snapshot from cache before fetching fresh data
+    prior = []
+    if cached:
+        try:
+            prior_data = json.loads(cached["data_json"])
+            prior = prior_data.get("current_holders", [])
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    current = _fetch_institutional_holders(ticker)
 
     if not current:
-        return {"delta": None, "current_holders": [], "error": "No 13F data available"}
+        return {"delta": None, "current_holders": [], "error": "No institutional holder data available"}
 
     # Classify current holders
     for h in current:

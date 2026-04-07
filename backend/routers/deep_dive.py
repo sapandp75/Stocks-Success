@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from fastapi import APIRouter
 from backend.services.market_data import (
     get_stock_fundamentals, get_fcf_3yr_average, get_sbc, get_net_debt,
@@ -75,21 +76,28 @@ def get_deep_dive_data(ticker: str):
 
     ai_analysis = None
     if row:
-        ai_analysis = {
-            "dive_date": row["dive_date"],
-            "first_impression": row["ai_first_impression"],
-            "bear_case_stock": row["ai_bear_case_stock"],
-            "bear_case_business": row["ai_bear_case_business"],
-            "bull_case_rebuttal": row["ai_bull_case_rebuttal"],
-            "bull_case_upside": row["ai_bull_case_upside"],
-            "whole_picture": row["ai_whole_picture"],
-            "self_review": row["ai_self_review"],
-            "verdict": row["ai_verdict"],
-            "conviction": row["ai_conviction"],
-            "entry_grid": json.loads(row["ai_entry_grid_json"]) if row["ai_entry_grid_json"] else None,
-            "exit_playbook": row["ai_exit_playbook"],
-            "next_review_date": row["ai_next_review_date"] if "ai_next_review_date" in row.keys() else None,
-        }
+        # Prefer full V2 sections JSON if available
+        sections_json = row["ai_sections_json"] if "ai_sections_json" in row.keys() else None
+        if sections_json:
+            ai_analysis = json.loads(sections_json)
+            ai_analysis["dive_date"] = row["dive_date"]
+        else:
+            # Legacy fallback
+            ai_analysis = {
+                "dive_date": row["dive_date"],
+                "first_impression": row["ai_first_impression"],
+                "bear_case_stock": row["ai_bear_case_stock"],
+                "bear_case_business": row["ai_bear_case_business"],
+                "bull_case_rebuttal": row["ai_bull_case_rebuttal"],
+                "bull_case_upside": row["ai_bull_case_upside"],
+                "whole_picture": row["ai_whole_picture"],
+                "self_review": row["ai_self_review"],
+                "verdict": row["ai_verdict"],
+                "conviction": row["ai_conviction"],
+                "entry_grid": json.loads(row["ai_entry_grid_json"]) if row["ai_entry_grid_json"] else None,
+                "exit_playbook": row["ai_exit_playbook"],
+                "next_review_date": row["ai_next_review_date"] if "ai_next_review_date" in row.keys() else None,
+            }
 
     # --- ENRICHMENTS (each in try/except — never blocks) ---
     technicals = None
@@ -402,9 +410,8 @@ def analyze_deep_dive(ticker: str):
     bear_business = result.get("bear_case_business", "")
     if bear_raw and not bear_stock and not bear_business:
         # Try to split on sub-headings
-        import re as _re
-        stock_match = _re.split(r"\*\*(?:Stock Risk|Price Risk)\*\*", bear_raw, maxsplit=1)
-        biz_match = _re.split(r"\*\*(?:Business Risk|Fundamental Risk)\*\*", bear_raw, maxsplit=1)
+        stock_match = re.split(r"\*\*(?:Stock Risk|Price Risk)\*\*", bear_raw, maxsplit=1)
+        biz_match = re.split(r"\*\*(?:Business Risk|Fundamental Risk)\*\*", bear_raw, maxsplit=1)
         if len(stock_match) > 1 and len(biz_match) > 1:
             bear_stock = biz_match[0].strip() if len(stock_match) > 1 else bear_raw
             bear_business = biz_match[1].strip() if len(biz_match) > 1 else ""
@@ -418,8 +425,8 @@ def analyze_deep_dive(ticker: str):
     bull_rebuttal = result.get("bull_case_rebuttal", "")
     bull_upside = result.get("bull_case_upside", "")
     if bull_raw and not bull_rebuttal and not bull_upside:
-        rebuttal_match = _re.split(r"\*\*(?:Rebuttal)\*\*", bull_raw, maxsplit=1)
-        upside_match = _re.split(r"\*\*(?:Upside)\*\*", bull_raw, maxsplit=1)
+        rebuttal_match = re.split(r"\*\*(?:Rebuttal)\*\*", bull_raw, maxsplit=1)
+        upside_match = re.split(r"\*\*(?:Upside)\*\*", bull_raw, maxsplit=1)
         if len(upside_match) > 1:
             bull_rebuttal = upside_match[0].strip()
             bull_upside = upside_match[1].strip()
@@ -431,16 +438,16 @@ def analyze_deep_dive(ticker: str):
     next_review = None
     verdict_text = result.get("verdict", "")
     if verdict_text:
-        review_match = _re.search(r"\*\*Next Review Date\*\*[:\s]*(.+?)(?:\n|$)", verdict_text)
+        review_match = re.search(r"\*\*Next Review Date\*\*[:\s]*(.+?)(?:\n|$)", verdict_text)
         if review_match:
             next_review = review_match.group(1).strip()
 
     # Extract conviction from verdict section
     conviction = None
     if verdict_text:
-        conviction_match = _re.search(
+        conviction_match = re.search(
             r"(?:conviction|confidence)[:\s]*\*?\*?(HIGH|MODERATE|MEDIUM|LOW)\*?\*?",
-            verdict_text, _re.IGNORECASE,
+            verdict_text, re.IGNORECASE,
         )
         if conviction_match:
             raw = conviction_match.group(1).upper()
@@ -449,7 +456,7 @@ def analyze_deep_dive(ticker: str):
     # Extract entry grid from verdict section
     entry_grid = None
     if verdict_text:
-        grid_rows = _re.findall(
+        grid_rows = re.findall(
             r"\|\s*T(\d)\s*(?:\([^)]*\))?\s*\|\s*\$?([\d,.]+)\s*\|\s*([\d]+%?)\s*\|\s*(.+?)\s*\|",
             verdict_text,
         )
@@ -466,34 +473,54 @@ def analyze_deep_dive(ticker: str):
     # Extract exit playbook
     exit_playbook = None
     if verdict_text:
-        exit_match = _re.search(
+        exit_match = re.search(
             r"\*\*Exit Playbook\*\*[:\s]*([\s\S]+?)(?:\*\*Next Review|$)",
             verdict_text,
         )
         if exit_match:
             exit_playbook = exit_match.group(1).strip()
 
-    # Save to deep_dives table
+    # Build full V2 sections dict for durable storage
+    v2_sections = {
+        k: v for k, v in result.items()
+        if k not in ("raw_text", "ticker", "generated_at", "model", "error")
+    }
+    # Override with parsed/split values
+    v2_sections["bear_case_stock"] = bear_stock
+    v2_sections["bear_case_business"] = bear_business
+    v2_sections["bull_case_rebuttal"] = bull_rebuttal
+    v2_sections["bull_case_upside"] = bull_upside
+    if conviction:
+        v2_sections["conviction"] = conviction
+    if entry_grid:
+        v2_sections["entry_grid"] = entry_grid
+    if exit_playbook:
+        v2_sections["exit_playbook"] = exit_playbook
+    if next_review:
+        v2_sections["next_review_date"] = next_review
+
+    # Save to deep_dives table (legacy columns + full V2 JSON)
     with get_db() as db:
         db.execute("""INSERT INTO deep_dives (
             ticker, ai_first_impression, ai_bear_case_stock, ai_bear_case_business,
             ai_bull_case_rebuttal, ai_bull_case_upside, ai_whole_picture,
             ai_self_review, ai_verdict, ai_conviction, ai_entry_grid_json,
-            ai_exit_playbook, ai_next_review_date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
+            ai_exit_playbook, ai_next_review_date, ai_sections_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
             ticker,
             result.get("first_impression") or result.get("data_snapshot"),
             bear_stock,
             bear_business,
             bull_rebuttal,
             bull_upside,
-            result.get("whole_picture"),
-            result.get("self_review"),
+            result.get("whole_picture") or result.get("moat"),
+            result.get("self_review") or result.get("opportunities_threats"),
             verdict_text,
             conviction,
             json.dumps(entry_grid) if entry_grid else None,
             exit_playbook,
             next_review,
+            json.dumps(v2_sections, default=str),
         ))
         db.commit()
 
