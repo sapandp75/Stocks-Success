@@ -7,6 +7,7 @@ import DeepDivePage from './pages/DeepDivePage'
 import OptionsPage from './pages/OptionsPage'
 import WatchlistPage from './pages/WatchlistPage'
 import PositionsPage from './pages/PositionsPage'
+import BreadthPage from './pages/BreadthPage'
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="/deep-dive" element={<DeepDivePage />} />
           <Route path="/deep-dive/:ticker" element={<DeepDivePage />} />
           <Route path="/options" element={<OptionsPage />} />
+          <Route path="/breadth" element={<BreadthPage />} />
           <Route path="/watchlist" element={<WatchlistPage />} />
           <Route path="/positions" element={<PositionsPage />} />
         </Routes>

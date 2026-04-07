@@ -34,6 +34,7 @@ export async function putJSON(path, body) {
 
 // API helpers
 export const getRegime = () => fetchJSON('/regime')
+export const getBreadth = () => fetchJSON('/breadth')
 export const getLatestScan = () => fetchJSON('/screener/latest')
 export const startScan = (type = 'weekly') => postJSON(`/screener/scan?scan_type=${type}`, {})
 export const getScanStatus = () => fetchJSON('/screener/scan/status')
