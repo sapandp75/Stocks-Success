@@ -86,19 +86,31 @@ def check_b2_warnings(stock: dict) -> list[str]:
     return warnings
 
 
-def scan_sp500(scan_type: str = "weekly") -> dict:
-    """Full S&P 500 scan. Returns B1 and B2 candidates with warnings."""
+def scan_sp500(scan_type: str = "weekly", progress_callback=None) -> dict:
+    """Backward-compat wrapper for SPX scans."""
+    return scan_universe(universe="spx", scan_type=scan_type, progress_callback=progress_callback)
+
+
+def scan_universe(universe: str = "spx", scan_type: str = "weekly", progress_callback=None) -> dict:
+    """Scan a stock universe through B1/B2 gates. Returns candidates with warnings.
+    universe: 'spx' or 'ndx'. progress_callback(current, total) called per ticker."""
     import time
-    from backend.services.sp500 import get_sp500_tickers
     from backend.services.market_data import get_stock_fundamentals
 
-    tickers = get_sp500_tickers()
+    if universe == "ndx":
+        from backend.services.ndx100 import get_ndx100_tickers
+        tickers = get_ndx100_tickers()
+    else:
+        from backend.services.sp500 import get_sp500_tickers
+        tickers = get_sp500_tickers()
     b1_candidates = []
     b2_candidates = []
     errors = []
     consecutive_errors = 0
 
     for i, ticker in enumerate(tickers):
+        if progress_callback:
+            progress_callback(i, len(tickers))
         try:
             result = get_stock_fundamentals(ticker)
             data = result.value
@@ -131,6 +143,7 @@ def scan_sp500(scan_type: str = "weekly") -> dict:
     return {
         "scan_date": datetime.now().isoformat(),
         "scan_type": scan_type,
+        "universe": universe,
         "total_scanned": len(tickers),
         "b1_count": len(b1_candidates),
         "b2_count": len(b2_candidates),

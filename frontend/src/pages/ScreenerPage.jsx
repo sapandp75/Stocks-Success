@@ -1,10 +1,14 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { getLatestScan, startScan, getScanStatus } from '../api'
+import { getLatestScan, startScan, getScanStatus, resetScan } from '../api'
 import StockCard from '../components/StockCard'
 import SectorBar from '../components/SectorBar'
 import FilterBar from '../components/FilterBar'
 
 const TABS = ['B1', 'B2', 'Both', 'Watchlist']
+const UNIVERSES = [
+  { key: 'spx', label: 'S&P 500', defaultTotal: 503 },
+  { key: 'ndx', label: 'NDX 100', defaultTotal: 103 },
+]
 
 function applySortAndFilter(candidates, filters) {
   let list = [...candidates]
@@ -50,16 +54,39 @@ function applySortAndFilter(candidates, filters) {
   return list
 }
 
-function ScanProgress({ scanned, total, errors }) {
+function UniverseToggle({ universe, onChange }) {
+  return (
+    <div className="inline-flex rounded-lg border p-0.5 mb-4" style={{ borderColor: '#e2e4e8', backgroundColor: '#f0f1f3' }}>
+      {UNIVERSES.map(u => (
+        <button
+          key={u.key}
+          onClick={() => onChange(u.key)}
+          className="px-4 py-1.5 rounded-md text-sm font-medium transition-all"
+          style={{
+            backgroundColor: universe === u.key ? '#ffffff' : 'transparent',
+            color: universe === u.key ? '#1a1a2e' : '#6b7280',
+            boxShadow: universe === u.key ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+            border: universe === u.key ? '1px solid #e2e4e8' : '1px solid transparent',
+          }}
+        >
+          {u.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ScanProgress({ scanned, total, universe }) {
   const pct = total > 0 ? Math.round((scanned / total) * 100) : 0
+  const uConfig = UNIVERSES.find(u => u.key === universe) || UNIVERSES[0]
   return (
     <div className="bg-white rounded-lg border p-6 mb-6" style={{ borderColor: '#e2e4e8' }}>
       <div className="flex items-center gap-4 mb-3">
         <div className="animate-spin w-5 h-5 border-2 rounded-full" style={{ borderColor: '#e2e4e8', borderTopColor: '#00a562' }} />
         <div>
-          <div className="font-semibold" style={{ color: '#1a1a2e' }}>Scanning S&P 500...</div>
+          <div className="font-semibold" style={{ color: '#1a1a2e' }}>Scanning {uConfig.label}...</div>
           <div className="text-xs" style={{ color: '#6b7280' }}>
-            This scans all 500 stocks through B1/B2 gates. Takes 3-5 minutes on first run.
+            Scanning ~{uConfig.defaultTotal} stocks through B1/B2 gates.
           </div>
         </div>
       </div>
@@ -67,75 +94,134 @@ function ScanProgress({ scanned, total, errors }) {
         <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: '#00a562' }} />
       </div>
       <div className="text-xs" style={{ color: '#6b7280' }}>
-        {scanned > 0 ? `${scanned} / ~503 stocks processed` : 'Starting scan...'}
-        {errors > 0 && <span style={{ color: '#d97b0e' }}> · {errors} errors</span>}
+        {scanned > 0 ? `${scanned} / ~${total || uConfig.defaultTotal} stocks processed` : 'Starting scan...'}
       </div>
     </div>
   )
 }
 
 export default function ScreenerPage() {
-  const [scan, setScan] = useState(null)
+  const [universe, setUniverse] = useState('spx')
+  const [scans, setScans] = useState({})  // keyed by universe
   const [tab, setTab] = useState('B1')
   const [filters, setFilters] = useState({ sort: 'drop' })
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [error, setError] = useState(null)
+  const defaultTotal = UNIVERSES.find(u => u.key === universe)?.defaultTotal || 503
+  const [scanProgress, setScanProgress] = useState({ scanned: 0, total: defaultTotal })
+
+  const scan = scans[universe] || null
+
+  // Load latest scan for the active universe + detect running scans
   useEffect(() => {
-    getLatestScan()
-      .then(data => {
-        if (data && !data.error) setScan(data)
+    let cancelled = false
+    const load = async () => {
+      // Always check if a scan is running on the server for this universe
+      try {
+        const status = await getScanStatus(universe)
+        if (!cancelled && status.status === 'running') {
+          setLoading(true)
+          setScanProgress({ scanned: status.progress || 0, total: status.total || defaultTotal })
+          pollStatus(universe)
+          if (!scans[universe]) setInitialLoading(false)
+          return
+        }
+      } catch {}
+
+      // If we already have cached data for this universe, use it
+      if (scans[universe]) {
         setInitialLoading(false)
-      })
-      .catch(() => {
-        setInitialLoading(false)
-      })
-  }, [])
+        return
+      }
+
+      setInitialLoading(true)
+      try {
+        const data = await getLatestScan(universe)
+        if (!cancelled && data && !data.error) setScans(prev => ({ ...prev, [universe]: data }))
+      } catch {}
+      if (!cancelled) setInitialLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [universe])
 
   const pollRef = useRef(null)
+  const universeRef = useRef(universe)
+  universeRef.current = universe
 
-  const pollStatus = useCallback(() => {
+  const pollStatus = useCallback((scanUniverse) => {
+    const uTotal = UNIVERSES.find(u => u.key === scanUniverse)?.defaultTotal || 503
     pollRef.current = setInterval(async () => {
       try {
-        const status = await getScanStatus()
+        const status = await getScanStatus(scanUniverse)
+        if (universeRef.current === scanUniverse) {
+          setScanProgress({ scanned: status.progress || 0, total: status.total || uTotal })
+        }
         if (status.status === 'complete') {
           clearInterval(pollRef.current)
-          const result = await getLatestScan()
-          if (result && !result.error) setScan(result)
-          setLoading(false)
+          const result = await getLatestScan(scanUniverse)
+          if (result && !result.error) setScans(prev => ({ ...prev, [scanUniverse]: result }))
+          if (universeRef.current === scanUniverse) {
+            setLoading(false)
+            setScanProgress({ scanned: 0, total: uTotal })
+          }
         } else if (status.status === 'error') {
           clearInterval(pollRef.current)
-          setError(status.error || 'Scan failed')
-          setLoading(false)
+          if (universeRef.current === scanUniverse) {
+            setError(status.error || 'Scan failed')
+            setLoading(false)
+            setScanProgress({ scanned: 0, total: uTotal })
+          }
         }
       } catch {
         clearInterval(pollRef.current)
-        setError('Lost connection to scan')
-        setLoading(false)
+        if (universeRef.current === scanUniverse) {
+          setError('Lost connection to scan')
+          setLoading(false)
+          setScanProgress({ scanned: 0, total: uTotal })
+        }
       }
     }, 3000)
   }, [])
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
+  const handleUniverseChange = (newUniverse) => {
+    setUniverse(newUniverse)
+    setFilters({ sort: 'drop' })
+    setError(null)
+    // Stop polling if switching away from a running scan's universe
+    if (loading && pollRef.current) {
+      clearInterval(pollRef.current)
+      setLoading(false)
+      setScanProgress({ scanned: 0, total: UNIVERSES.find(u => u.key === newUniverse)?.defaultTotal || 503 })
+    }
+  }
+
   const handleScan = async (type) => {
     setLoading(true)
     setError(null)
     try {
       if (type === 'daily') {
-        // Daily scans run inline — small enough
-        const result = await startScan(type)
-        setScan(result)
+        const result = await startScan(type, universe)
+        setScans(prev => ({ ...prev, [universe]: result }))
         setLoading(false)
       } else {
-        // Weekly: POST to start, then poll
-        await startScan(type)
-        pollStatus()
+        await startScan(type, universe)
+        pollStatus(universe)
       }
     } catch (e) {
       setError(e.message)
       setLoading(false)
     }
+  }
+
+  const handleCancel = async () => {
+    if (pollRef.current) clearInterval(pollRef.current)
+    try { await resetScan(universe) } catch {}
+    setLoading(false)
+    setScanProgress({ scanned: 0, total: defaultTotal })
   }
 
   const getCandidates = () => {
@@ -159,12 +245,15 @@ export default function ScreenerPage() {
     return (scan.b2_candidates || []).filter(s => b1Set.has(s.ticker)).length
   }, [scan])
 
+  const universeLabel = UNIVERSES.find(u => u.key === universe)?.label || 'S&P 500'
+
   if (initialLoading) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
+        <UniverseToggle universe={universe} onChange={handleUniverseChange} />
         <div className="flex items-center gap-3">
           <div className="animate-spin w-5 h-5 border-2 rounded-full" style={{ borderColor: '#e2e4e8', borderTopColor: '#00a562' }} />
-          <span style={{ color: '#6b7280' }}>Loading screener data...</span>
+          <span style={{ color: '#6b7280' }}>Loading {universeLabel} screener data...</span>
         </div>
       </div>
     )
@@ -172,34 +261,47 @@ export default function ScreenerPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
+      {/* Universe Toggle */}
+      <UniverseToggle universe={universe} onChange={handleUniverseChange} />
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: '#1a1a2e' }}>Stock Screener</h1>
           <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
             {scan?.scan_date
-              ? <>Last scan: {new Date(scan.scan_date).toLocaleString()} · {scan.total_scanned} scanned
+              ? <>{universeLabel} · Last scan: {new Date(scan.scan_date).toLocaleString()} · {scan.total_scanned} scanned
                   {scan.error_count > 0 && <span style={{ color: '#d97b0e' }}> · {scan.error_count} errors</span>}</>
-              : 'Fail-closed gates: missing data = FAIL. Only quality passes through.'}
+              : `${universeLabel} · Fail-closed gates: missing data = FAIL. Only quality passes through.`}
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => handleScan('weekly')}
-            disabled={loading}
-            className="px-4 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
-            style={{ backgroundColor: '#00a562' }}
-          >
-            {loading ? 'Scanning...' : 'Run Weekly Scan'}
-          </button>
-          <button
-            onClick={() => handleScan('daily')}
-            disabled={loading}
-            className="px-4 py-2 rounded text-sm font-medium border disabled:opacity-50"
-            style={{ borderColor: '#e2e4e8', color: '#1a1a2e' }}
-          >
-            Run Daily Scan
-          </button>
+          {loading ? (
+            <button
+              onClick={handleCancel}
+              className="px-4 py-2 rounded text-sm font-medium text-white"
+              style={{ backgroundColor: '#e5484d' }}
+            >
+              Cancel Scan
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => handleScan('weekly')}
+                className="px-4 py-2 rounded text-sm font-medium text-white"
+                style={{ backgroundColor: '#00a562' }}
+              >
+                Scan {universeLabel}
+              </button>
+              <button
+                onClick={() => handleScan('daily')}
+                className="px-4 py-2 rounded text-sm font-medium border"
+                style={{ borderColor: '#e2e4e8', color: '#1a1a2e' }}
+              >
+                Daily Refresh
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -209,13 +311,11 @@ export default function ScreenerPage() {
         </div>
       )}
 
-      {/* Loading state during scan */}
-      {loading && !scan && (
-        <ScanProgress scanned={0} total={503} errors={0} />
+      {loading && (
+        <ScanProgress scanned={scanProgress.scanned} total={scanProgress.total} universe={universe} />
       )}
 
-      {/* Summary cards when we have data */}
-      {scan && !loading && (
+      {scan && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg border p-4" style={{ borderColor: '#e2e4e8' }}>
             <div className="text-xs font-medium mb-1" style={{ color: '#6b7280' }}>Total Scanned</div>
@@ -240,7 +340,6 @@ export default function ScreenerPage() {
         </div>
       )}
 
-      {/* Tabs */}
       {scan && (
         <>
           <div className="flex gap-1 mb-4 border-b" style={{ borderColor: '#e2e4e8' }}>
@@ -290,13 +389,12 @@ export default function ScreenerPage() {
         </>
       )}
 
-      {/* First-time empty state (scan hasn't started yet) */}
       {!scan && !loading && (
         <div className="bg-white rounded-lg border p-12 text-center" style={{ borderColor: '#e2e4e8' }}>
           <div className="text-4xl mb-4">📊</div>
-          <div className="text-lg font-semibold mb-2" style={{ color: '#1a1a2e' }}>No Scan Data Yet</div>
+          <div className="text-lg font-semibold mb-2" style={{ color: '#1a1a2e' }}>No {universeLabel} Scan Data Yet</div>
           <p className="text-sm mb-6 max-w-md mx-auto" style={{ color: '#6b7280' }}>
-            Run a weekly scan to screen all S&P 500 stocks through B1 (Quality + Value) and B2 (High Growth) gates.
+            Run a scan to screen all {universeLabel} stocks through B1 (Quality + Value) and B2 (High Growth) gates.
             Fail-closed: missing data = automatic fail.
           </p>
           <button
@@ -304,7 +402,7 @@ export default function ScreenerPage() {
             className="px-6 py-3 rounded-lg text-sm font-medium text-white"
             style={{ backgroundColor: '#00a562' }}
           >
-            Run First Scan
+            Scan {universeLabel}
           </button>
         </div>
       )}

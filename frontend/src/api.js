@@ -34,9 +34,11 @@ export async function putJSON(path, body) {
 
 // API helpers
 export const getRegime = () => fetchJSON('/regime')
-export const getLatestScan = () => fetchJSON('/screener/latest')
-export const startScan = (type = 'weekly') => postJSON(`/screener/scan?scan_type=${type}`, {})
-export const getScanStatus = () => fetchJSON('/screener/scan/status')
+export const getBreadth = () => fetchJSON('/breadth')
+export const getLatestScan = (universe = 'spx') => fetchJSON(`/screener/latest?universe=${universe}`)
+export const startScan = (type = 'weekly', universe = 'spx') => postJSON(`/screener/scan?scan_type=${type}&universe=${universe}`, {})
+export const getScanStatus = (universe = 'spx') => fetchJSON(`/screener/scan/status?universe=${universe}`)
+export const resetScan = (universe = 'spx') => postJSON(`/screener/scan/reset?universe=${universe}`, {})
 export const getDeepDive = (ticker) => fetchJSON(`/deep-dive/${ticker}`)
 export const postDeepDive = (ticker, data) => postJSON(`/deep-dive/${ticker}`, data)
 export const scanOptions = (tickers) => fetchJSON(`/options/scan?tickers=${encodeURIComponent(tickers)}`)

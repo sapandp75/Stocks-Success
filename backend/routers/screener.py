@@ -3,22 +3,24 @@ import logging
 import threading
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Query
-from backend.services.stock_screener import scan_sp500
+from backend.services.stock_screener import scan_universe
 from backend.database import get_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
 
-# In-memory scan state (single-user app)
-_scan_state = {
-    "status": "idle",  # idle | running | complete | error
-    "progress": 0,
-    "total": 0,
-    "result": None,
-    "error": None,
-}
-_scan_lock = threading.Lock()
+VALID_UNIVERSES = ("spx", "ndx")
+_DEFAULT_TOTALS = {"spx": 503, "ndx": 103}
+
+
+def _make_idle_state():
+    return {"status": "idle", "progress": 0, "total": 0, "result": None, "error": None}
+
+
+# Per-universe scan state (single-user app)
+_scan_states = {u: _make_idle_state() for u in VALID_UNIVERSES}
+_scan_locks = {u: threading.Lock() for u in VALID_UNIVERSES}
 
 
 def _enrich_candidates(results: dict):
@@ -66,39 +68,45 @@ def _enrich_candidates(results: dict):
         logger.warning("Failed to enrich candidates with technicals", exc_info=True)
 
 
-def _run_scan_background(scan_type: str):
-    """Run scan in background thread. Updates _scan_state."""
-    global _scan_state
+def _run_scan_background(universe: str, scan_type: str):
+    """Run scan in background thread. Updates per-universe _scan_states."""
+    lock = _scan_locks[universe]
     try:
-        with _scan_lock:
-            _scan_state = {"status": "running", "progress": 0, "total": 503, "result": None, "error": None}
+        # State already set to "running" by start_scan before thread launch
+        def _update_progress(current, total):
+            with lock:
+                _scan_states[universe]["progress"] = current
+                _scan_states[universe]["total"] = total
 
-        results = scan_sp500(scan_type=scan_type)
+        results = scan_universe(universe=universe, scan_type=scan_type, progress_callback=_update_progress)
         _enrich_candidates(results)
 
         # Save to database
         with get_db() as db:
             db.execute(
-                "INSERT INTO scan_results (scan_type, total_scanned, b1_count, b2_count, results_json, errors_json) VALUES (?, ?, ?, ?, ?, ?)",
-                (scan_type, results["total_scanned"], results["b1_count"], results["b2_count"],
+                "INSERT INTO scan_results (scan_type, universe, total_scanned, b1_count, b2_count, results_json, errors_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (scan_type, universe, results["total_scanned"], results["b1_count"], results["b2_count"],
                  json.dumps(results, default=str), json.dumps(results["errors"], default=str)),
             )
             db.commit()
 
-        with _scan_lock:
-            _scan_state = {"status": "complete", "progress": results["total_scanned"],
+        with lock:
+            _scan_states[universe] = {"status": "complete", "progress": results["total_scanned"],
                            "total": results["total_scanned"], "result": results, "error": None}
-        logger.info("Scan complete: %d B1, %d B2 from %d", results["b1_count"], results["b2_count"], results["total_scanned"])
+        logger.info("[%s] Scan complete: %d B1, %d B2 from %d", universe.upper(), results["b1_count"], results["b2_count"], results["total_scanned"])
 
     except Exception as e:
-        logger.error("Scan failed: %s", e, exc_info=True)
-        with _scan_lock:
-            _scan_state = {"status": "error", "progress": 0, "total": 0, "result": None, "error": str(e)}
+        logger.error("[%s] Scan failed: %s", universe.upper(), e, exc_info=True)
+        with lock:
+            _scan_states[universe] = {"status": "error", "progress": 0, "total": 0, "result": None, "error": str(e)}
 
 
 @router.post("/scan")
-def start_scan(scan_type: str = Query("weekly", enum=["daily", "weekly"])):
-    """Start an S&P 500 scan. Returns immediately with job status."""
+def start_scan(
+    scan_type: str = Query("weekly", enum=["daily", "weekly"]),
+    universe: str = Query("spx", enum=["spx", "ndx"]),
+):
+    """Start a scan for the given universe. Returns immediately with job status."""
     if scan_type == "daily":
         # Daily scans are small enough to run inline
         with get_db() as db:
@@ -118,27 +126,47 @@ def start_scan(scan_type: str = Query("weekly", enum=["daily", "weekly"])):
                 results.append({"ticker": t, "error": str(e)})
         return {"scan_type": "daily", "results": results}
 
-    # Weekly: check if already running
-    with _scan_lock:
-        if _scan_state["status"] == "running":
-            return {"status": "already_running", "progress": _scan_state["progress"], "total": _scan_state["total"]}
+    # Weekly: check if already running for this universe
+    lock = _scan_locks[universe]
+    default_total = _DEFAULT_TOTALS.get(universe, 500)
+    with lock:
+        if _scan_states[universe]["status"] == "running":
+            state = _scan_states[universe]
+            return {"status": "already_running", "progress": state["progress"], "total": state["total"]}
+        # Claim "running" inside the lock to prevent double-launch (TOCTOU)
+        _scan_states[universe] = {"status": "running", "progress": 0, "total": default_total, "result": None, "error": None}
 
-    thread = threading.Thread(target=_run_scan_background, args=(scan_type,), daemon=True)
+    thread = threading.Thread(target=_run_scan_background, args=(universe, scan_type), daemon=True)
     thread.start()
-    return {"status": "started", "message": "Scan started. Poll /api/screener/scan/status for progress."}
+    return {"status": "started", "universe": universe, "message": f"Scan started for {universe.upper()}. Poll /api/screener/scan/status?universe={universe} for progress."}
 
 
 @router.get("/scan")
-def run_scan_legacy(scan_type: str = Query("weekly", enum=["daily", "weekly"])):
+def run_scan_legacy(
+    scan_type: str = Query("weekly", enum=["daily", "weekly"]),
+    universe: str = Query("spx", enum=["spx", "ndx"]),
+):
     """Legacy GET endpoint — redirects to POST behavior."""
-    return start_scan(scan_type=scan_type)
+    return start_scan(scan_type=scan_type, universe=universe)
+
+
+@router.post("/scan/reset")
+def reset_scan(universe: str = Query("spx", enum=["spx", "ndx"])):
+    """Force-reset a stuck scan state back to idle."""
+    lock = _scan_locks[universe]
+    with lock:
+        prev = _scan_states[universe]["status"]
+        _scan_states[universe] = _make_idle_state()
+    logger.info("[%s] Scan state reset from '%s' to 'idle'", universe.upper(), prev)
+    return {"status": "reset", "universe": universe, "previous": prev}
 
 
 @router.get("/scan/status")
-def scan_status():
-    """Poll scan progress."""
-    with _scan_lock:
-        state = {**_scan_state}
+def scan_status(universe: str = Query("spx", enum=["spx", "ndx"])):
+    """Poll scan progress for the given universe."""
+    lock = _scan_locks[universe]
+    with lock:
+        state = {**_scan_states[universe]}
     # Don't send full results in status — use /latest for that
     if state["status"] == "complete":
         return {"status": "complete", "progress": state["progress"], "total": state["total"]}
@@ -146,19 +174,24 @@ def scan_status():
 
 
 @router.get("/latest")
-def get_latest_scan():
-    """Get most recent scan results with freshness indicator."""
+def get_latest_scan(universe: str = Query("spx", enum=["spx", "ndx"])):
+    """Get most recent scan results for the given universe with freshness indicator."""
     # Check if just-completed scan is available in memory
-    with _scan_lock:
-        if _scan_state["status"] == "complete" and _scan_state["result"]:
-            result = _scan_state["result"]
+    lock = _scan_locks[universe]
+    with lock:
+        if _scan_states[universe]["status"] == "complete" and _scan_states[universe]["result"]:
+            result = _scan_states[universe]["result"]
             result["is_stale"] = False
             return result
 
     with get_db() as db:
-        row = db.execute("SELECT * FROM scan_results ORDER BY scan_date DESC LIMIT 1").fetchone()
+        row = db.execute(
+            "SELECT * FROM scan_results WHERE universe = ? ORDER BY scan_date DESC LIMIT 1",
+            (universe,),
+        ).fetchone()
     if not row:
-        return {"error": "No scan results. Run POST /api/screener/scan?scan_type=weekly first."}
+        label = "S&P 500" if universe == "spx" else "Nasdaq-100"
+        return {"error": f"No {label} scan results. Run POST /api/screener/scan?universe={universe}&scan_type=weekly first."}
     result = json.loads(row["results_json"])
     result["scan_id"] = row["id"]
     scan_date = datetime.fromisoformat(row["scan_date"])

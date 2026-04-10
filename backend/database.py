@@ -69,6 +69,7 @@ def init_db():
                 total_scanned INTEGER,
                 b1_count INTEGER,
                 b2_count INTEGER,
+                universe TEXT NOT NULL DEFAULT 'spx',
                 results_json TEXT NOT NULL,
                 errors_json TEXT DEFAULT '[]'
             );
@@ -91,6 +92,8 @@ def init_db():
                 ai_conviction TEXT,
                 ai_entry_grid_json TEXT,
                 ai_exit_playbook TEXT,
+                ai_next_review_date TEXT,
+                ai_sections_json TEXT,
                 data_completeness TEXT DEFAULT '{}'
             );
 
@@ -209,4 +212,53 @@ def init_db():
                 peers_json TEXT,
                 fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS quarterly_cache (
+                ticker TEXT PRIMARY KEY,
+                data_json TEXT,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS growth_metrics_cache (
+                ticker TEXT PRIMARY KEY,
+                data_json TEXT,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS forward_estimates_cache (
+                ticker TEXT PRIMARY KEY,
+                data_json TEXT,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS external_targets_cache (
+                ticker TEXT PRIMARY KEY,
+                data_json TEXT,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS fund_flow_cache (
+                ticker TEXT PRIMARY KEY,
+                data_json TEXT,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS fundamentals_cache (
+                ticker TEXT PRIMARY KEY,
+                data_json TEXT NOT NULL,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
+        _ensure_column(conn, "deep_dives", "ai_next_review_date", "TEXT")
+        _ensure_column(conn, "deep_dives", "ai_sections_json", "TEXT")
+        _ensure_column(conn, "scan_results", "universe", "TEXT NOT NULL DEFAULT 'spx'")
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    existing = {
+        row["name"]
+        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        conn.commit()
