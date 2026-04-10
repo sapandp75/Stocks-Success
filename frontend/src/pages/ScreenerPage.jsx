@@ -114,28 +114,26 @@ export default function ScreenerPage() {
   const scan = scans[universe] || null
 
   // Load latest scan for the active universe + detect running scans
+  // Always fetches from API to pick up scans that completed while viewing another universe
   useEffect(() => {
     let cancelled = false
+    const hasCached = !!scans[universe]
+    if (!hasCached) setInitialLoading(true)
+
     const load = async () => {
-      // Always check if a scan is running on the server for this universe
+      // Check if a scan is running on the server for this universe
       try {
         const status = await getScanStatus(universe)
         if (!cancelled && status.status === 'running') {
           setLoading(true)
           setScanProgress({ scanned: status.progress || 0, total: status.total || defaultTotal })
           pollStatus(universe)
-          if (!scans[universe]) setInitialLoading(false)
+          if (!hasCached) setInitialLoading(false)
           return
         }
       } catch {}
 
-      // If we already have cached data for this universe, use it
-      if (scans[universe]) {
-        setInitialLoading(false)
-        return
-      }
-
-      setInitialLoading(true)
+      // Always fetch latest from API (DB) so completed scans are never missed
       try {
         const data = await getLatestScan(universe)
         if (!cancelled && data && !data.error) setScans(prev => ({ ...prev, [universe]: data }))

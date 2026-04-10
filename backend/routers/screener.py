@@ -180,8 +180,7 @@ def get_latest_scan(universe: str = Query("spx", enum=["spx", "ndx"])):
     lock = _scan_locks[universe]
     with lock:
         if _scan_states[universe]["status"] == "complete" and _scan_states[universe]["result"]:
-            result = _scan_states[universe]["result"]
-            result["is_stale"] = False
+            result = {**_scan_states[universe]["result"], "is_stale": False}
             return result
 
     with get_db() as db:
