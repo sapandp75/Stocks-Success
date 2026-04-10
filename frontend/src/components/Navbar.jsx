@@ -7,6 +7,7 @@ const links = [
   ['/screener', 'Screener'],
   ['/deep-dive', 'Deep Dive'],
   ['/options', 'Options'],
+  ['/breadth', 'Breadth'],
   ['/watchlist', 'Watchlist'],
   ['/positions', 'Positions'],
 ]

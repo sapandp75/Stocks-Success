@@ -1,7 +1,16 @@
+import json
+import logging
 import yfinance as yf
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import datetime
+from backend.database import get_db, is_fresh
 from backend.services.providers import DataResult
+
+logger = logging.getLogger(__name__)
+
+_FUNDAMENTALS_TTL_HOURS = 12
+_FETCH_TIMEOUT_SECONDS = 10
 
 REQUIRED_B1_FIELDS = [
     "operating_margin", "free_cash_flow", "revenue_growth",
@@ -13,15 +22,18 @@ REQUIRED_B2_FIELDS = [
 ]
 
 ALL_FUNDAMENTAL_FIELDS = [
-    "price", "market_cap", "forward_pe", "trailing_pe",
+    "price", "market_cap", "forward_pe", "trailing_pe", "peg_ratio",
     "revenue_growth", "operating_margin", "gross_margin", "profit_margin",
     "free_cash_flow", "total_revenue", "debt_to_equity", "return_on_equity",
-    "short_percent", "shares_outstanding", "beta", "dividend_yield",
+    "short_percent", "short_ratio", "shares_outstanding", "beta", "dividend_yield",
     "high_52w", "low_52w", "drop_from_high", "earnings_date",
+    "forward_eps", "trailing_eps", "avg_volume", "enterprise_value", "ebitda",
+    "ex_dividend_date", "business_summary",
 ]
 
 
-def get_stock_fundamentals(ticker: str) -> DataResult:
+def _fetch_fundamentals_live(ticker: str) -> dict:
+    """Raw yfinance fetch — called inside a thread with timeout."""
     stock = yf.Ticker(ticker)
     info = stock.info
 
@@ -60,6 +72,7 @@ def get_stock_fundamentals(ticker: str) -> DataResult:
         "debt_to_equity": de_ratio,
         "return_on_equity": info.get("returnOnEquity"),
         "short_percent": info.get("shortPercentOfFloat"),
+        "short_ratio": info.get("shortRatio"),
         "high_52w": high_52w,
         "low_52w": info.get("fiftyTwoWeekLow"),
         "drop_from_high": round(drop, 4) if drop is not None else None,
@@ -67,10 +80,56 @@ def get_stock_fundamentals(ticker: str) -> DataResult:
         "beta": info.get("beta"),
         "dividend_yield": info.get("dividendYield"),
         "earnings_date": earnings_date,
+        "peg_ratio": info.get("pegRatio"),
+        "forward_eps": info.get("forwardEps"),
+        "trailing_eps": info.get("trailingEps"),
+        "avg_volume": info.get("averageVolume"),
+        "enterprise_value": info.get("enterpriseValue"),
+        "ebitda": info.get("ebitda"),
+        "ex_dividend_date": str(info.get("exDividendDate", "")) if info.get("exDividendDate") else None,
+        "business_summary": (info.get("longBusinessSummary") or "")[:500],
+        "price_change_pct": info.get("regularMarketChangePercent", None),
     }
 
-    missing = [f for f in ALL_FUNDAMENTAL_FIELDS if data.get(f) is None]
+    # Normalize price_change_pct to decimal (yfinance returns as percentage in some versions)
+    if data["price_change_pct"] is not None and abs(data["price_change_pct"]) > 1:
+        data["price_change_pct"] = data["price_change_pct"] / 100
 
+    return data
+
+
+def get_stock_fundamentals(ticker: str) -> DataResult:
+    # Check cache first
+    with get_db() as db:
+        row = db.execute("SELECT data_json, fetched_at FROM fundamentals_cache WHERE ticker = ?", (ticker,)).fetchone()
+    if row and is_fresh(row["fetched_at"], _FUNDAMENTALS_TTL_HOURS):
+        data = json.loads(row["data_json"])
+        missing = [f for f in ALL_FUNDAMENTAL_FIELDS if data.get(f) is None]
+        return DataResult(value=data, source="cache", missing_fields=missing)
+
+    # Fetch live with timeout
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_fetch_fundamentals_live, ticker)
+        try:
+            data = future.result(timeout=_FETCH_TIMEOUT_SECONDS)
+        except FuturesTimeout:
+            logger.warning("Timeout fetching %s after %ds", ticker, _FETCH_TIMEOUT_SECONDS)
+            # Return stale cache if available
+            if row:
+                data = json.loads(row["data_json"])
+                missing = [f for f in ALL_FUNDAMENTAL_FIELDS if data.get(f) is None]
+                return DataResult(value=data, source="stale_cache", missing_fields=missing)
+            raise TimeoutError(f"{ticker}: Yahoo fetch timed out after {_FETCH_TIMEOUT_SECONDS}s")
+
+    # Save to cache
+    with get_db() as db:
+        db.execute(
+            "INSERT OR REPLACE INTO fundamentals_cache (ticker, data_json, fetched_at) VALUES (?, ?, datetime('now'))",
+            (ticker, json.dumps(data, default=str)),
+        )
+        db.commit()
+
+    missing = [f for f in ALL_FUNDAMENTAL_FIELDS if data.get(f) is None]
     return DataResult(value=data, source="yfinance", missing_fields=missing)
 
 

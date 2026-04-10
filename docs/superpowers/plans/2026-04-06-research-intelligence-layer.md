@@ -81,6 +81,10 @@ feedparser>=6.0             # RSS parsing (Seeking Alpha, CNBC, Substack)
 
 Note: All Finnhub/FMP/Alpha Vantage calls use `httpx` (already in requirements.txt). No additional API client libraries needed.
 
+### __init__.py files
+
+Ensure `backend/services/__init__.py` and `backend/routers/__init__.py` exist (can be empty). The main plan's Task 1 should create these during scaffolding. If they don't exist when you start R-tasks, create empty ones.
+
 ### New SQLite Tables (add to database.py init_db)
 
 ```sql
@@ -155,8 +159,8 @@ SUBSTACK_FEEDS = [
     {"name": "Net Interest", "url": "https://www.netinterest.co/feed"},
 ]
 
-# CNBC RSS (no key needed)
-CNBC_EARNINGS_RSS = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839135"
+# CNBC RSS — reserved for future use (not consumed in Phase 1/2)
+# CNBC_EARNINGS_RSS = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839135"
 ```
 
 ---
@@ -894,12 +898,11 @@ def mark_digest_seen(event_ids: list[int]):
 Research API — serves aggregated research, sentiment, transcripts, and digest.
 All endpoints are scoped to specific tickers. No "firehose" endpoints.
 """
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from backend.services.research import get_all_research
 from backend.services.sentiment import fetch_sentiment
 from backend.services.transcripts import fetch_latest_transcript
-from backend.services.digest import get_digest, refresh_digest, mark_digest_seen
-from backend.database import get_db
+from backend.services.digest import mark_digest_seen
 
 router = APIRouter(prefix="/api/research", tags=["research"])
 
@@ -935,31 +938,6 @@ def get_sentiment(ticker: str):
     return fetch_sentiment(ticker.upper())
 
 
-@router.get("/digest/watchlist")
-def get_watchlist_digest(unseen_only: bool = Query(False)):
-    """
-    Get "What Changed" digest for all watchlist tickers.
-    Triggers a refresh if data is stale.
-    """
-    db = get_db()
-    rows = db.execute("SELECT ticker FROM watchlist WHERE status = 'WATCHING'").fetchall()
-    db.close()
-
-    tickers = [r["ticker"] for r in rows]
-    if not tickers:
-        return {"events": [], "note": "Add stocks to watchlist first."}
-
-    # Refresh if stale
-    refresh_digest(tickers)
-
-    events = get_digest(tickers=tickers, unseen_only=unseen_only)
-    return {
-        "tickers_checked": len(tickers),
-        "events": events,
-        "unseen_count": len([e for e in events if not e.get("seen")]),
-    }
-
-
 @router.post("/digest/mark-seen")
 def mark_seen(data: dict):
     """Mark digest events as seen."""
@@ -968,6 +946,8 @@ def mark_seen(data: dict):
         mark_digest_seen(event_ids)
     return {"status": "ok", "marked": len(event_ids)}
 ```
+
+Note: The watchlist digest endpoint lives in `routers/watchlist.py` (see Task R2), not here. Digest is accessed from the watchlist page, so it belongs with the watchlist router.
 
 ---
 
@@ -1020,26 +1000,32 @@ except Exception:
 
 Add `"research_context": research_context` to the return dict.
 
-### Modify: backend/routers/screener.py — scan results
+### Modify: backend/routers/screener.py — NO backend changes needed
 
-After scan_sp500() returns results, enrich B1/B2 candidates with sentiment. This is done **lazily** — sentiment is only fetched for stocks that passed the gates, not all 500.
+Sentiment is fetched **lazily by the frontend**, not during the scan. This avoids:
+- Blocking the already-slow S&P 500 scan with 15-20 extra API calls
+- Burning through the Alpha Vantage 25 calls/day budget in one scan
+
+Instead, each `StockCard` component fetches sentiment on render via `GET /api/research/{ticker}/sentiment`. The SQLite cache ensures repeated views don't re-fetch. This also means sentiment loads progressively — the scan results appear immediately, then sentiment badges fill in as each card mounts.
+
+**Add a batch endpoint for efficiency** (add to `routers/research.py`):
 
 ```python
-# Enrich candidates with sentiment (only for stocks that passed gates)
-from backend.services.sentiment import fetch_sentiment
-
-for candidate in results["b1_candidates"] + results["b2_candidates"]:
-    try:
-        sent = fetch_sentiment(candidate["ticker"])
-        candidate["sentiment_score"] = sent.get("av_sentiment_score")
-        candidate["sentiment_label"] = sent.get("av_sentiment_label")
-        candidate["contrarian_rating"] = sent.get("contrarian_rating")
-        candidate["analyst_trend"] = sent.get("finnhub_recent_change")
-    except Exception:
-        candidate["sentiment_score"] = None
-        candidate["contrarian_rating"] = "UNKNOWN"
-        candidate["analyst_trend"] = None
+@router.get("/sentiment/batch")
+def get_sentiment_batch(tickers: str = Query(..., description="Comma-separated tickers")):
+    """Batch sentiment for screener — fetches only uncached tickers."""
+    from backend.services.sentiment import fetch_sentiment
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    results = {}
+    for t in ticker_list:
+        try:
+            results[t] = fetch_sentiment(t)
+        except Exception:
+            results[t] = {"contrarian_rating": "UNKNOWN"}
+    return results
 ```
+
+The ScreenerPage calls this once after scan results load, passing all B1/B2 tickers as a comma-separated list. Cached tickers return instantly; only uncached ones hit the APIs.
 
 ### Modify: backend/routers/watchlist.py — add digest endpoint
 
@@ -1548,19 +1534,150 @@ def test_research_for_claude_returns_string():
 ### tests/test_digest.py
 
 ```python
-from backend.services.digest import get_digest
+from backend.services.digest import get_digest, _save_digest_event, mark_digest_seen
 from backend.database import init_db, get_db
+import pytest
 
 
-def test_digest_returns_list(tmp_path, monkeypatch):
-    """Digest should return a list of events."""
-    # Use temp DB
+@pytest.fixture(autouse=True)
+def temp_db(tmp_path, monkeypatch):
+    """Use temp DB for all digest tests."""
     from backend import config
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "test.db")
     init_db()
 
+
+def test_digest_returns_list():
     events = get_digest(tickers=["AAPL"])
     assert isinstance(events, list)
+
+
+def test_digest_saves_and_retrieves_event():
+    _save_digest_event("AAPL", "insider_buy", "Tim Cook bought 10k shares",
+                       "Filed 2026-04-01", "2026-04-01", "finnhub")
+    events = get_digest(tickers=["AAPL"])
+    assert len(events) == 1
+    assert events[0]["headline"] == "Tim Cook bought 10k shares"
+    assert events[0]["event_type"] == "insider_buy"
+
+
+def test_digest_deduplicates():
+    """Same headline + ticker + date should not create duplicate."""
+    _save_digest_event("AAPL", "insider_buy", "Same event", "detail", "2026-04-01", "finnhub")
+    _save_digest_event("AAPL", "insider_buy", "Same event", "detail", "2026-04-01", "finnhub")
+    events = get_digest(tickers=["AAPL"])
+    assert len(events) == 1
+
+
+def test_digest_filters_by_ticker():
+    _save_digest_event("AAPL", "press_release", "Apple event", "", "2026-04-01", "fmp")
+    _save_digest_event("MSFT", "press_release", "Microsoft event", "", "2026-04-01", "fmp")
+    apple_only = get_digest(tickers=["AAPL"])
+    assert all(e["ticker"] == "AAPL" for e in apple_only)
+
+
+def test_digest_mark_seen():
+    _save_digest_event("AAPL", "analyst_change", "Downgrade", "", "2026-04-01", "finnhub")
+    events = get_digest(tickers=["AAPL"])
+    assert events[0]["seen"] == 0
+    mark_digest_seen([events[0]["id"]])
+    events = get_digest(tickers=["AAPL"], unseen_only=True)
+    assert len(events) == 0
+```
+
+### tests/test_research_api.py
+
+```python
+"""Integration tests for research API endpoints."""
+from fastapi.testclient import TestClient
+from unittest.mock import patch
+from backend.main import app
+from backend.database import init_db
+import pytest
+
+client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def temp_db(tmp_path, monkeypatch):
+    from backend import config
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "test.db")
+    init_db()
+
+
+def test_research_endpoint_returns_structure():
+    """GET /api/research/{ticker} returns expected shape."""
+    with patch("backend.services.research.fetch_seeking_alpha", return_value=[]):
+        with patch("backend.services.research.fetch_substack_mentions", return_value=[]):
+            with patch("backend.services.sentiment.fetch_sentiment", return_value={"contrarian_rating": "UNKNOWN"}):
+                with patch("backend.services.transcripts.fetch_latest_transcript", return_value=None):
+                    r = client.get("/api/research/AAPL")
+                    assert r.status_code == 200
+                    data = r.json()
+                    assert data["ticker"] == "AAPL"
+                    assert "articles" in data
+                    assert "sentiment" in data
+                    assert "transcript" in data
+
+
+def test_sentiment_endpoint():
+    """GET /api/research/{ticker}/sentiment returns sentiment data."""
+    with patch("backend.services.sentiment.fetch_sentiment") as mock:
+        mock.return_value = {
+            "av_sentiment_score": -0.3,
+            "contrarian_rating": "MODERATE_INTEREST",
+        }
+        r = client.get("/api/research/AAPL/sentiment")
+        assert r.status_code == 200
+        assert r.json()["contrarian_rating"] == "MODERATE_INTEREST"
+
+
+def test_digest_mark_seen_endpoint():
+    """POST /api/research/digest/mark-seen works."""
+    r = client.post("/api/research/digest/mark-seen", json={"event_ids": []})
+    assert r.status_code == 200
+    assert r.json()["marked"] == 0
+
+
+def test_watchlist_digest_empty():
+    """GET /api/watchlist/digest returns empty when no watchlist."""
+    r = client.get("/api/watchlist/digest")
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data, list) or "events" in data
+
+
+def test_earnings_calendar_empty():
+    """GET /api/regime/earnings-calendar returns empty when no watchlist."""
+    r = client.get("/api/regime/earnings-calendar")
+    assert r.status_code == 200
+    assert "upcoming_earnings" in r.json()
+```
+
+### tests/test_research_cache.py
+
+```python
+"""Tests for RSS cache TTL logic."""
+from datetime import datetime, timedelta
+from backend.services.research import _is_fresh
+
+
+def test_fresh_within_ttl():
+    recent = (datetime.now() - timedelta(hours=2)).isoformat()
+    assert _is_fresh(recent, ttl_hours=6) is True
+
+
+def test_stale_beyond_ttl():
+    old = (datetime.now() - timedelta(hours=8)).isoformat()
+    assert _is_fresh(old, ttl_hours=6) is False
+
+
+def test_none_fetched_at_is_stale():
+    assert _is_fresh(None, ttl_hours=6) is False
+
+
+def test_empty_string_is_stale():
+    assert _is_fresh("", ttl_hours=6) is False
 ```
 
 ---
@@ -1630,7 +1747,25 @@ Build these tasks in this order, slotting into the existing plan:
 | **Seeking Alpha RSS** | Unlimited | ~1 per deep dive + watchlist ticker | No concern |
 | **Substack RSS** | Unlimited | ~4 feeds per deep dive | No concern |
 
-**Mitigation for AV tight budget:** Only fetch sentiment for stocks that pass screener gates. With typical 10-20 B1/B2 hits per scan, this stays within the 25/day limit. Cache for 12 hours.
+**Mitigation for AV tight budget:**
+- Only fetch sentiment for stocks that pass screener gates (10-20 tickers, not 500)
+- Cache for 12 hours in SQLite — deep dive page reuses screener's cached sentiment, no double-fetch
+- Add a daily call counter in `sentiment.py`: track calls in SQLite, skip AV fetch if >20 calls today (leave 5 buffer for deep dives). Finnhub has no daily limit (60/min), so it always fetches.
+- If AV budget is exhausted, sentiment degrades gracefully: Finnhub analyst data still shows, only AV news score is missing
+
+```python
+# Add to sentiment_cache table:
+# av_calls_today INTEGER DEFAULT 0
+# av_calls_date TEXT  -- reset counter when date changes
+
+# In _fetch_alpha_vantage_sentiment(), check before calling:
+db = get_db()
+row = db.execute("SELECT av_calls_today, av_calls_date FROM sentiment_cache LIMIT 1").fetchone()
+today = datetime.now().strftime("%Y-%m-%d")
+if row and row["av_calls_date"] == today and row["av_calls_today"] >= 20:
+    db.close()
+    return {}  # Budget exhausted, skip AV
+```
 
 ---
 

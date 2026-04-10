@@ -21,17 +21,39 @@ def validate_ticker(ticker: str) -> str:
 # --- Pydantic request models ---
 
 class DeepDivePayload(BaseModel):
-    first_impression: str | None = None
+    # Section 1-2: Gates & Fundamentals (generated text)
+    gates_summary: str | None = None
+    key_fundamentals: str | None = None
+    # Section 3: Growth
+    growth: str | None = None
+    # Section 4-5: Bear/Bull (split)
     bear_case_stock: str | None = None
     bear_case_business: str | None = None
     bull_case_rebuttal: str | None = None
     bull_case_upside: str | None = None
-    whole_picture: str | None = None
-    self_review: str | None = None
+    # Section 6: Valuation
+    valuation: str | None = None
+    # Section 7: Moat (structured)
+    moat: str | None = None
+    # Section 8: Opportunities & Threats
+    opportunities_threats: str | None = None
+    # Section 9: Smart Money
+    smart_money: str | None = None
+    # Section 10: Verdict
     verdict: str | None = None
     conviction: str | None = None
     entry_grid: list[dict] | None = None
     exit_playbook: str | None = None
+    next_review_date: str | None = None
+    # Legacy fields (backwards compat with existing data)
+    first_impression: str | None = None
+    whole_picture: str | None = None
+    self_review: str | None = None
+    # Appendix fields (stored in ai_sections_json)
+    moat_structured: dict | None = None
+    opportunities: str | list | None = None
+    threats: str | list | None = None
+    scenarios: list[dict] | dict | None = None
 
 
 class WatchlistEntry(BaseModel):

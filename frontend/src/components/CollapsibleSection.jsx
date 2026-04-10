@@ -1,10 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
-export default function CollapsibleSection({ title, number, accentColor = '#e2e4e8', defaultOpen = false, children }) {
-  const [open, setOpen] = useState(defaultOpen)
+export default function CollapsibleSection({ title, number, label, accentColor = '#e2e4e8', defaultOpen = false, locked = false, children }) {
+  const [open, setOpen] = useState(defaultOpen && !locked)
+
+  useEffect(() => {
+    if (defaultOpen && !locked) setOpen(true)
+  }, [defaultOpen, locked])
 
   return (
-    <div className="bg-white rounded-lg border overflow-hidden" style={{ borderColor: '#e2e4e8', borderLeftWidth: 3, borderLeftColor: accentColor }}>
+    <div className="bg-white rounded-lg border" style={{ borderColor: '#e2e4e8', borderLeftWidth: 3, borderLeftColor: accentColor, opacity: locked ? 0.7 : 1 }}>
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
@@ -12,9 +16,10 @@ export default function CollapsibleSection({ title, number, accentColor = '#e2e4
       >
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: accentColor, color: '#fff' }}>
-            {number}
+            {label || number}
           </span>
           <span className="font-semibold text-sm" style={{ color: '#1a1a2e' }}>{title}</span>
+          {locked && <span className="text-xs" style={{ color: '#6b7280' }}>🔒</span>}
         </div>
         <span className="text-sm" style={{ color: '#6b7280' }}>{open ? '▼' : '▶'}</span>
       </button>

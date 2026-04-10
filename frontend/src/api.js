@@ -32,6 +32,25 @@ export async function putJSON(path, body) {
   return res.json()
 }
 
+export async function downloadDeepDiveExport(ticker) {
+  const res = await fetch(`${BASE}/deep-dive/${ticker}/export`)
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+
+  const disposition = res.headers.get('content-disposition') || ''
+  const filenameMatch = disposition.match(/filename="([^"]+)"/i)
+  const filename = filenameMatch?.[1] || `deep-dive-${ticker}.json`
+
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 // API helpers
 export const getRegime = () => fetchJSON('/regime')
 export const getBreadth = () => fetchJSON('/breadth')

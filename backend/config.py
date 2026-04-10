@@ -5,6 +5,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "app.db"
 SP500_FALLBACK = DATA_DIR / "sp500_fallback.json"
+NDX100_FALLBACK = DATA_DIR / "ndx100_fallback.json"
 
 # API keys — set via environment variables
 FMP_API_KEY = os.getenv("FMP_API_KEY", "")
@@ -86,6 +87,12 @@ ENRICHMENT_CONFIG = {
     "institutional_ttl_hours": 6,
     "analyst_ttl_hours": 6,
     "peer_ttl_hours": 6,
+}
+
+# Deep dive gates
+DEEP_DIVE_GATES = {
+    "min_market_cap": 2_000_000_000,  # $2B
+    "min_avg_volume": 500_000,         # 500K shares/day
 }
 
 # Gemini 2.5 Pro config

@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.logging_config import setup_logging
 from backend.database import init_db
-from backend.routers import regime, screener, options, deep_dive, watchlist, positions, research
+from backend.routers import regime, screener, options, deep_dive, watchlist, positions, research, breadth
 
 setup_logging()
 
@@ -32,6 +32,7 @@ app.include_router(deep_dive.router)
 app.include_router(watchlist.router)
 app.include_router(positions.router)
 app.include_router(research.router)
+app.include_router(breadth.router)
 
 
 @app.get("/api/health")

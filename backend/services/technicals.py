@@ -271,7 +271,52 @@ def calculate_relative_strength(
 
 
 # ---------------------------------------------------------------------------
-# 8. Direction classification (delegate)
+# 8. Classic Pivot Points
+# ---------------------------------------------------------------------------
+
+def calculate_pivot_points(high: pd.Series, low: pd.Series, close: pd.Series) -> dict:
+    """Classic pivot points from previous trading day's HLC."""
+    h = float(high.iloc[-2]) if len(high) >= 2 else float(high.iloc[-1])
+    l = float(low.iloc[-2]) if len(low) >= 2 else float(low.iloc[-1])
+    c = float(close.iloc[-2]) if len(close) >= 2 else float(close.iloc[-1])
+
+    pivot = (h + l + c) / 3
+    s1 = 2 * pivot - h
+    s2 = pivot - (h - l)
+    s3 = l - 2 * (h - pivot)
+    r1 = 2 * pivot - l
+    r2 = pivot + (h - l)
+    r3 = h + 2 * (pivot - l)
+
+    return {
+        "pivot": round(pivot, 2),
+        "s1": round(s1, 2),
+        "s2": round(s2, 2),
+        "s3": round(s3, 2),
+        "r1": round(r1, 2),
+        "r2": round(r2, 2),
+        "r3": round(r3, 2),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 9. ATR — Average True Range
+# ---------------------------------------------------------------------------
+
+def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
+    """ATR for volatility measurement."""
+    prev_close = close.shift(1)
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    val = atr.iloc[-1]
+    return round(float(val), 2) if pd.notna(val) else 0.0
+
+
+# ---------------------------------------------------------------------------
+# 10. Direction classification (delegate)
 # ---------------------------------------------------------------------------
 
 def classify_stock_direction(
@@ -392,28 +437,65 @@ def get_full_technicals(ticker: str) -> dict:
         )
         db.commit()
 
+    # Classic pivot points from yesterday's HLC
+    pivots = calculate_pivot_points(high, low, close)
+
+    # ATR for volatility
+    atr = calculate_atr(high, low, close)
+
+    # Short-term / long-term trend
+    short_trend = "bullish" if price > ema20 and ema20 > sma50 else "bearish" if price < ema20 and ema20 < sma50 else "neutral"
+    long_trend = "bullish" if price > sma200 else "bearish" if price < sma200 else "neutral"
+
+    # Return nested structure matching frontend TechnicalPanel
     return {
         "ticker": ticker,
+        "price": round(price, 2),
         "rsi": rsi,
-        "macd_value": macd["macd"],
-        "macd_signal": macd["signal"],
-        "macd_histogram": macd["histogram"],
-        "macd_crossover": macd["crossover"],
-        "direction": direction,
-        "ema20": round(ema20, 2),
-        "sma50": round(sma50, 2),
-        "sma200": round(sma200, 2),
         "adx": adx,
-        "bollinger_upper": boll["upper"],
-        "bollinger_lower": boll["lower"],
-        "bollinger_pct_b": boll["pct_b"],
-        "volume_relative": vol["relative_volume"],
-        "volume_trend": vol["trend"],
-        "support_1": support_1,
-        "support_2": support_2,
-        "resistance_1": resistance_1,
-        "resistance_2": resistance_2,
-        "rs_vs_spy_20d": rs["rs_20d"],
-        "rs_vs_spy_60d": rs["rs_60d"],
-        "extras": extras,
+        "atr": atr,
+        "direction": direction,
+        "short_trend": short_trend,
+        "long_trend": long_trend,
+        "moving_averages": {
+            "ema20": round(ema20, 2),
+            "sma50": round(sma50, 2),
+            "sma200": round(sma200, 2),
+            "price_vs_ema20": round((price / ema20 - 1) * 100, 2) if ema20 else None,
+            "price_vs_sma50": round((price / sma50 - 1) * 100, 2) if sma50 else None,
+            "price_vs_sma200": round((price / sma200 - 1) * 100, 2) if sma200 else None,
+        },
+        "macd": {
+            "value": macd["macd"],
+            "signal": macd["signal"],
+            "histogram": macd["histogram"],
+            "crossover": macd["crossover"],
+        },
+        "bollinger": {
+            "upper": boll["upper"],
+            "middle": boll["middle"],
+            "lower": boll["lower"],
+            "percent_b": boll["pct_b"],
+        },
+        "volume": {
+            "relative_volume": vol["relative_volume"],
+            "trend": vol["trend"],
+            "dry_up_warning": vol["dry_up"],
+            "avg_20d": vol["avg_20d"],
+        },
+        "support_resistance": {
+            "support": sr["support"],
+            "resistance": sr["resistance"],
+            "pivot": pivots.get("pivot"),
+            "s1": pivots.get("s1"),
+            "s2": pivots.get("s2"),
+            "s3": pivots.get("s3"),
+            "r1": pivots.get("r1"),
+            "r2": pivots.get("r2"),
+            "r3": pivots.get("r3"),
+        },
+        "relative_strength": {
+            "rs_20d": rs["rs_20d"],
+            "rs_60d": rs["rs_60d"],
+        },
     }

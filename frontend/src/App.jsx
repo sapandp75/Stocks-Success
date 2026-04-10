@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import ErrorBoundary from './ErrorBoundary'
 import { RegimeProvider } from './RegimeContext'
 import Navbar from './components/Navbar'
 import RegimePage from './pages/RegimePage'
@@ -7,10 +8,12 @@ import DeepDivePage from './pages/DeepDivePage'
 import OptionsPage from './pages/OptionsPage'
 import WatchlistPage from './pages/WatchlistPage'
 import PositionsPage from './pages/PositionsPage'
+import BreadthPage from './pages/BreadthPage'
 
 export default function App() {
   return (
     <BrowserRouter>
+      <ErrorBoundary>
       <RegimeProvider>
       <div className="min-h-screen" style={{ backgroundColor: '#f0f1f3', color: '#1a1a2e' }}>
         <Navbar />
@@ -22,9 +25,11 @@ export default function App() {
           <Route path="/options" element={<OptionsPage />} />
           <Route path="/watchlist" element={<WatchlistPage />} />
           <Route path="/positions" element={<PositionsPage />} />
+          <Route path="/breadth" element={<BreadthPage />} />
         </Routes>
       </div>
       </RegimeProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   )
 }

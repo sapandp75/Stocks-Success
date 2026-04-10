@@ -1,14 +1,26 @@
 export default function InstitutionalPanel({ data }) {
   if (!data) return null
 
-  const ownership = data.institutional_ownership ?? data.ownership_pct
+  // institutional_pct is already a percentage (e.g. 88.29), not a decimal
+  const ownershipRaw = data.institutional_pct ?? data.institutional_ownership ?? data.ownership_pct
+  const ownership = ownershipRaw != null
+    ? (ownershipRaw > 1 ? ownershipRaw : ownershipRaw * 100)
+    : null
+
   const trend = data.trend || 'STABLE'
   const trendColors = {
     ACCUMULATING: '#00a562',
     DISTRIBUTING: '#d97b0e',
     STABLE: '#6b7280',
+    HIGH: '#00a562',
+    LOW: '#e5484d',
   }
-  const holders = (data.top_holders || []).slice(0, 5)
+  const holders = (data.top_holders || []).slice(0, 8)
+  // Estimate total shares from holder data + ownership %
+  const totalShares = data.total_shares_outstanding
+    || (ownershipRaw > 1 && holders.length > 0
+      ? holders.reduce((s, h) => s + (h.shares || 0), 0) / (ownershipRaw / 100) * (holders.length / 10)
+      : null)
 
   return (
     <div className="mt-4 p-3 rounded border" style={{ borderColor: '#e2e4e8' }}>
@@ -16,7 +28,7 @@ export default function InstitutionalPanel({ data }) {
         <span className="font-semibold text-sm" style={{ color: '#1a1a2e' }}>Institutional Holdings</span>
         {ownership != null && (
           <span className="text-lg font-bold" style={{ color: '#1a1a2e' }}>
-            {(ownership * 100).toFixed(1)}%
+            {ownership.toFixed(1)}%
           </span>
         )}
         <span
@@ -31,15 +43,21 @@ export default function InstitutionalPanel({ data }) {
           <thead>
             <tr style={{ color: '#6b7280' }}>
               <th className="text-left font-medium pb-1">Holder</th>
-              <th className="text-right font-medium pb-1">% Ownership</th>
+              <th className="text-right font-medium pb-1">Shares</th>
+              <th className="text-right font-medium pb-1">% Out</th>
             </tr>
           </thead>
           <tbody>
             {holders.map((h, i) => (
               <tr key={i} style={{ color: '#1a1a2e' }}>
-                <td className="py-0.5 truncate" style={{ maxWidth: '200px' }}>{h.name || h.holder}</td>
+                <td className="py-0.5">{h.name || h.holder || '—'}</td>
+                <td className="py-0.5 text-right">{h.shares ? h.shares.toLocaleString() : '—'}</td>
                 <td className="py-0.5 text-right">
-                  {h.ownership_pct != null ? `${(h.ownership_pct * 100).toFixed(2)}%` : h.pct != null ? `${h.pct.toFixed(2)}%` : '--'}
+                  {h.pct_out != null ? `${h.pct_out.toFixed(2)}%`
+                    : h.ownership_pct != null ? `${(h.ownership_pct * 100).toFixed(2)}%`
+                    : h.pct != null ? `${h.pct.toFixed(2)}%`
+                    : h.shares && data.total_shares_outstanding ? `${(h.shares / data.total_shares_outstanding * 100).toFixed(2)}%`
+                    : '—'}
                 </td>
               </tr>
             ))}

@@ -17,8 +17,11 @@
 | Phase | What | Data Sources | Spec Coverage |
 |-------|------|-------------|---------------|
 | **Phase 1: Core MVP** (Tasks 1-12) | Full app with all 6 pages working | yfinance only | ~70% of CORE features |
+| **Phase 1.5: Research Intelligence** (Tasks R1-R4) | Sentiment, SA RSS, transcripts, digest | +AV Sentiment +Finnhub +FMP +SA RSS | Research layer woven into existing pages |
 | **Phase 2: Data Enrichment** (Tasks 13-15) | FMP, Finnhub, EdgarTools integration | +FMP +Finnhub +EdgarTools | ~90% of CORE features |
 | **Phase 3: MCP + Technical** (Tasks 16-17) | TradingView MCPs, Alpha Vantage MCP | +TradingView +Alpha Vantage | 100% CORE + ENRICHMENT |
+
+**Research Intelligence Layer:** See `docs/superpowers/plans/2026-04-06-research-intelligence-layer.md` for full plan. R-tasks slot into Phase 1 at specific points (R1a after Task 1, R1b after Task 3, R1c/R2 after Task 9, R3a-c during Tasks 10-12, R4 after Task 12).
 
 **Deferred explicitly (not in any phase):**
 - TradingView chart screenshots (requires ChromeDriver + TV account — S2-66/67/68/69)

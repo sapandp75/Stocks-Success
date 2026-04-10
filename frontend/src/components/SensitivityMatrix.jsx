@@ -1,5 +1,5 @@
 export default function SensitivityMatrix({ matrix, currentPrice }) {
-  if (!matrix || matrix.length === 0) return null
+  if (!matrix || matrix.length === 0 || !matrix[0]?.values) return null
 
   return (
     <div>
@@ -11,7 +11,7 @@ export default function SensitivityMatrix({ matrix, currentPrice }) {
           <thead>
             <tr>
               <th className="py-1 px-2 text-left text-xs" style={{ color: '#6b7280' }}>Growth Yr 1-5</th>
-              {matrix[0].values.map((v, i) => (
+              {(matrix[0]?.values || []).map((v, i) => (
                 <th key={i} className="py-1 px-2 text-center text-xs" style={{ color: '#6b7280' }}>
                   Yr 6-10: {(v.growth_6_10 * 100).toFixed(0)}%
                 </th>
@@ -24,7 +24,7 @@ export default function SensitivityMatrix({ matrix, currentPrice }) {
                 <td className="py-1 px-2 font-medium text-xs" style={{ color: '#1a1a2e' }}>
                   {(row.growth_1_5 * 100).toFixed(0)}%
                 </td>
-                {row.values.map((v, ci) => {
+                {(row?.values || []).map((v, ci) => {
                   const above = currentPrice && v.per_share > currentPrice
                   return (
                     <td

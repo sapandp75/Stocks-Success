@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from backend.main import app
 
@@ -35,6 +37,61 @@ def test_deep_dive_post_and_get():
         "bear_case_stock": "Price decline",
         "verdict": "B1", "conviction": "HIGH",
     })
-    r = client.get(f"/api/deep-dive/{ticker}").json()
+    fundamentals = SimpleNamespace(
+        value={
+            "name": "Test Co",
+            "price": None,
+            "market_cap": 2_000_000_000,
+            "avg_volume": 2_000_000,
+            "free_cash_flow": None,
+            "total_revenue": None,
+            "shares_outstanding": None,
+        },
+        source="test",
+        completeness=1.0,
+        missing_fields=[],
+    )
+    with patch("backend.routers.deep_dive.get_stock_fundamentals", return_value=fundamentals), \
+         patch("backend.routers.deep_dive.get_fcf_3yr_average", return_value=None), \
+         patch("backend.routers.deep_dive.get_sbc", return_value=None), \
+         patch("backend.routers.deep_dive.get_net_debt", return_value=0):
+        r = client.get(f"/api/deep-dive/{ticker}").json()
     assert r["ai_analysis"]["first_impression"] == "Looks interesting"
     assert r["ai_analysis"]["conviction"] == "HIGH"
+
+
+def test_deep_dive_export():
+    ticker = "TSXPT"
+    client.post(f"/api/deep-dive/{ticker}", json={
+        "first_impression": "Export path test",
+        "bear_case_stock": "Compression risk",
+        "verdict": "HOLD",
+        "conviction": "MODERATE",
+    })
+    fundamentals = SimpleNamespace(
+        value={
+            "name": "Export Co",
+            "price": None,
+            "market_cap": 2_000_000_000,
+            "avg_volume": 2_000_000,
+            "free_cash_flow": None,
+            "total_revenue": None,
+            "shares_outstanding": None,
+        },
+        source="test",
+        completeness=1.0,
+        missing_fields=[],
+    )
+    with patch("backend.routers.deep_dive.get_stock_fundamentals", return_value=fundamentals), \
+         patch("backend.routers.deep_dive.get_fcf_3yr_average", return_value=None), \
+         patch("backend.routers.deep_dive.get_sbc", return_value=None), \
+         patch("backend.routers.deep_dive.get_net_debt", return_value=0):
+        res = client.get(f"/api/deep-dive/{ticker}/export")
+    assert res.status_code == 200
+    assert "attachment; filename=" in res.headers.get("content-disposition", "")
+
+    payload = res.json()
+    assert payload["ticker"] == ticker
+    assert "latest_snapshot" in payload
+    assert isinstance(payload["deep_dive_history"], list)
+    assert payload["history_count"] >= 1

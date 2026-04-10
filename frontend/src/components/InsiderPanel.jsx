@@ -10,7 +10,9 @@ export default function InsiderPanel({ data }) {
   }
   const bg = sentimentColors[sentiment] || '#6b7280'
 
-  const transactions = (data.notable_transactions || data.transactions || []).slice(0, 5)
+  const buys = data.recent_buys
+  const sells = data.recent_sells
+  const transactions = (data.notable_transactions || data.transactions || data.notable || []).slice(0, 8)
 
   function fmtValue(val) {
     if (val == null) return '--'
@@ -30,11 +32,38 @@ export default function InsiderPanel({ data }) {
           {sentiment}{sentiment === 'SELLING' ? ' (contrarian)' : ''}
         </span>
       </div>
+
+      {/* Buy/sell counts */}
+      {(buys != null || sells != null) && (
+        <div className="flex gap-4 mb-3 text-xs">
+          {buys != null && (
+            <div>
+              <span style={{ color: '#6b7280' }}>Recent buys: </span>
+              <span className="font-semibold" style={{ color: '#00a562' }}>{buys.toLocaleString()}</span>
+            </div>
+          )}
+          {sells != null && (
+            <div>
+              <span style={{ color: '#6b7280' }}>Recent sells: </span>
+              <span className="font-semibold" style={{ color: '#e5484d' }}>{sells.toLocaleString()}</span>
+            </div>
+          )}
+          {buys != null && sells != null && (
+            <div>
+              <span style={{ color: '#6b7280' }}>Net: </span>
+              <span className="font-semibold" style={{ color: buys > sells ? '#00a562' : '#e5484d' }}>
+                {buys > sells ? '+' : ''}{(buys - sells).toLocaleString()}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {transactions.length > 0 ? (
         <div className="space-y-1">
           {transactions.map((t, i) => (
             <div key={i} className="flex justify-between text-xs" style={{ color: '#1a1a2e' }}>
-              <span className="truncate mr-2" style={{ maxWidth: '40%' }}>{t.name || t.insider_name || 'Unknown'}</span>
+              <span className="mr-2">{t.name || t.insider_name || 'Unknown'}</span>
               <span style={{ color: '#6b7280' }}>
                 {t.shares ? `${t.shares.toLocaleString()} shares` : ''} {t.value ? fmtValue(t.value) : ''} {t.date || ''}
               </span>

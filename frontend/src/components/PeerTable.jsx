@@ -53,7 +53,17 @@ export default function PeerTable({ data, ticker }) {
         </table>
       </div>
       {rank != null && (
-        <div className="text-xs mt-2" style={{ color: '#6b7280' }}>Rank among peers: {rank}</div>
+        <div className="text-xs mt-2 flex gap-3" style={{ color: '#6b7280' }}>
+          {typeof rank === 'object' ? (
+            <>
+              {rank.pe_rank != null && <span>PE rank: {rank.pe_rank}/{rank.total_peers}</span>}
+              {rank.margin_rank != null && <span>Margin rank: {rank.margin_rank}/{rank.total_peers}</span>}
+              {rank.growth_rank != null && <span>Growth rank: {rank.growth_rank}/{rank.total_peers}</span>}
+            </>
+          ) : (
+            <span>Rank among peers: {rank}</span>
+          )}
+        </div>
       )}
     </div>
   )

@@ -1,0 +1,10 @@
+/** Koyfin-style palette — single source of truth */
+export const GREEN = '#00a562'
+export const RED = '#e5484d'
+export const AMBER = '#d97b0e'
+export const TEXT = '#1a1a2e'
+export const MUTED = '#6b7280'
+export const BG = '#f0f1f3'
+export const CARD = '#ffffff'
+export const HOVER = '#f7f8fa'
+export const BORDER = '#e2e4e8'

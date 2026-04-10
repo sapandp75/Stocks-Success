@@ -251,6 +251,7 @@ def init_db():
         """)
         _ensure_column(conn, "deep_dives", "ai_next_review_date", "TEXT")
         _ensure_column(conn, "deep_dives", "ai_sections_json", "TEXT")
+        _ensure_column(conn, "deep_dives", "snapshot_json", "TEXT")
         _ensure_column(conn, "scan_results", "universe", "TEXT NOT NULL DEFAULT 'spx'")
 
 
