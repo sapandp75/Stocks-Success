@@ -72,6 +72,50 @@ Follow this sequence exactly. **Never skip or reorder.**
 | C: Opportunities & Threats | Bulleted lists of each |
 | D: Scenarios | Bear/base/bull price targets with probabilities |
 
+### Appendix JSON Shape (Required for Dashboard Rendering)
+
+Two appendix sections are schema-sensitive in the frontend. Do not improvise these keys.
+
+**Moat Assessment** must be posted as:
+
+```json
+"moat_structured": {
+  "overall": "WIDE|NARROW|NONE",
+  "trend": "STRENGTHENING|STABLE|ERODING",
+  "factors": [
+    {"name": "Switching Costs", "score": 4, "max": 5, "note": "..."},
+    {"name": "Network Effects", "score": 1, "max": 5, "note": "..."},
+    {"name": "Intangibles", "score": 5, "max": 5, "note": "..."},
+    {"name": "Cost Advantage", "score": 4, "max": 5, "note": "..."},
+    {"name": "Scale", "score": 5, "max": 5, "note": "..."}
+  ]
+}
+```
+
+Do **not** post a flat object like `"switching_costs": {...}` unless you are also updating the UI.
+
+**Scenarios** must be posted as either:
+
+```json
+"scenarios": [
+  {"name": "Bear", "target_price": 340, "probability": 0.25, "rationale": "..."},
+  {"name": "Base", "target_price": 450, "probability": 0.50, "rationale": "..."},
+  {"name": "Bull", "target_price": 580, "probability": 0.25, "rationale": "..."}
+]
+```
+
+or:
+
+```json
+"scenarios": {
+  "worst": {"name": "Bear", "target_price": 340, "probability": 0.25, "rationale": "..."},
+  "base": {"name": "Base", "target_price": 450, "probability": 0.50, "rationale": "..."},
+  "best": {"name": "Bull", "target_price": 580, "probability": 0.25, "rationale": "..."}
+}
+```
+
+Use numeric probabilities like `0.25`, not strings like `"25%"`.
+
 ---
 
 ## Step 3: POST Analysis to Dashboard
@@ -98,24 +142,44 @@ cat <<'EOF' | python3 bridge/deep_dive_worker.py TICKER --post
   "exit_playbook": "...",
   "next_review_date": "2026-07-10",
   "moat_structured": {
-    "switching_costs": {"score": 4, "reasoning": "..."},
-    "network_effects": {"score": 2, "reasoning": "..."},
-    "intangibles": {"score": 5, "reasoning": "..."},
-    "cost_advantage": {"score": 3, "reasoning": "..."},
-    "scale": {"score": 4, "reasoning": "..."}
+    "overall": "WIDE",
+    "trend": "STABLE",
+    "factors": [
+      {"name": "Switching Costs", "score": 4, "max": 5, "note": "..."},
+      {"name": "Network Effects", "score": 2, "max": 5, "note": "..."},
+      {"name": "Intangibles", "score": 5, "max": 5, "note": "..."},
+      {"name": "Cost Advantage", "score": 3, "max": 5, "note": "..."},
+      {"name": "Scale", "score": 4, "max": 5, "note": "..."}
+    ]
   },
   "opportunities": ["...", "..."],
   "threats": ["...", "..."],
   "scenarios": [
-    {"label": "Bear", "price": 340, "probability": "25%", "rationale": "..."},
-    {"label": "Base", "price": 450, "probability": "50%", "rationale": "..."},
-    {"label": "Bull", "price": 580, "probability": "25%", "rationale": "..."}
+    {"name": "Bear", "target_price": 340, "probability": 0.25, "rationale": "..."},
+    {"name": "Base", "target_price": 450, "probability": 0.50, "rationale": "..."},
+    {"name": "Bull", "target_price": 580, "probability": 0.25, "rationale": "..."}
   ]
 }
 EOF
 ```
 
 Response: `{"status": "saved", "ticker": "TICKER"}`
+
+### Step 3A: Verify Appendix Fields Saved Correctly
+
+Immediately verify the stored payload after every POST:
+
+```bash
+curl -s http://localhost:8000/api/deep-dive/TICKER | python3 -m json.tool
+```
+
+Confirm all of the following before considering the deep dive complete:
+- `ai_analysis.moat_structured.overall` exists
+- `ai_analysis.moat_structured.factors` is a non-empty list
+- `ai_analysis.scenarios` exists
+- each scenario has `name`, `target_price`, and numeric `probability`
+
+If moat or scenarios are missing in the dashboard, assume a schema mismatch first.
 
 ---
 

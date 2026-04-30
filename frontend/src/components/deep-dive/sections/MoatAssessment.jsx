@@ -2,8 +2,38 @@ import CollapsibleSection from '../../CollapsibleSection'
 import AiProvenance from '../AiProvenance'
 import MoatRatingBars from '../../charts/MoatRatingBars'
 
+function normalizeMoat(moat) {
+  if (!moat) return null
+
+  if (moat.factors || moat.overall || moat.trend) {
+    return moat
+  }
+
+  const entries = Object.entries(moat).filter(([, value]) => {
+    return value && typeof value === 'object' && ('score' in value || 'reasoning' in value)
+  })
+
+  if (entries.length === 0) return moat
+
+  const factors = entries.map(([name, value]) => ({
+    name: name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    score: value.score,
+    max: 5,
+    note: value.reasoning,
+  }))
+
+  const avgScore = factors.reduce((sum, factor) => sum + (factor.score || 0), 0) / factors.length
+  const overall = avgScore >= 4 ? 'WIDE' : avgScore >= 2.5 ? 'NARROW' : 'NONE'
+
+  return {
+    overall,
+    trend: moat.trend || null,
+    factors,
+  }
+}
+
 export default function MoatAssessment({ ai }) {
-  const moat = ai?.moat_structured
+  const moat = normalizeMoat(ai?.moat_structured)
   const hasData = !!(moat?.factors || moat?.overall)
 
   return (
